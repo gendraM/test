@@ -1,0 +1,13 @@
+Page/statistique globale (Tableau de bord)
+Elle consolidera toutes les statistiques importantes de l’application :
+Satiété (via BlocSatiété)
+Extras (via BlocExtras)
+Progression pondérale
+Score global, constance, badges, etc.
+Elle offrira une vue transversale : l’utilisatrice pourra voir en un coup d’œil tous ses indicateurs clés, comparer les tendances, et recevoir des feedbacks globaux.
+3. Pourquoi ne pas tout mettre dans chaque bloc ?
+Chaque bloc (BlocSatiété, BlocExtras…) donne une analyse locale (centrée sur un aspect).
+Le tableau de bord/statistiques est indispensable pour :
+Croiser les données (ex : lien entre extras et satiété)
+Donner une vision globale et synthétique
+Proposer des feedbacks et suggestions personnalisés à partir de plusieurs sources
