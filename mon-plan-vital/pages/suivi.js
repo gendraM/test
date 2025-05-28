@@ -1,6 +1,7 @@
 import RepasBloc from "../components/workspaces/test/mon-plan-vital/components/RepasBloc";
 import { supabase } from '../lib/supabaseClient';
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 
 function Snackbar({ open, message, type = "info", onClose }) {
   if (!open) return null;
@@ -52,6 +53,7 @@ const repasIcons = {
   "Déjeuner": "🍽️",
   "Collation": "🍏",
   "Dîner": "🍲",
+  "Autre": "🍴",
 };
 
 export default function Suivi() {
@@ -62,6 +64,10 @@ export default function Suivi() {
   const [scoreHebdomadaire, setScoreHebdomadaire] = useState(0);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", type: "info" });
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10)); // Date sélectionnée
+  const [aliment, setAliment] = useState(''); // Aliment saisi
+  const [suggestions, setSuggestions] = useState([]); // Suggestions d'aliments
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false); // Chargement des suggestions
 
   useEffect(() => {
     setLoading(true);
@@ -75,14 +81,13 @@ export default function Suivi() {
       setLoading(false);
     };
     fetchData();
-  }, []);
+  }, [selectedDate]);
 
-  // --- Fonctions de récupération de données SANS user_id ---
   const fetchRepasPlan = async () => {
     const { data, error } = await supabase
       .from('plan_alimentaire')
       .select('*')
-      .eq('date', new Date().toISOString().slice(0, 10));
+      .eq('date', selectedDate); // Utilisation de la date sélectionnée
 
     if (error) {
       setSnackbar({ open: true, message: "Erreur lors de la récupération des repas prévus.", type: "error" });
@@ -113,8 +118,7 @@ export default function Suivi() {
     repasSemaine.filter((repas) => repas.est_extra).length;
 
   const calculerScores = (repasSemaine) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const repasDuJour = repasSemaine.filter((repas) => repas.date === today);
+    const repasDuJour = repasSemaine.filter((repas) => repas.date === selectedDate); // Utilisation de la date sélectionnée
     const repasAlignes = repasDuJour.filter((repas) => repas.regle_respectee).length;
     const totalRepas = repasDuJour.length;
     setScoreJournalier(Math.round((repasAlignes / (totalRepas || 1)) * 100));
@@ -123,8 +127,9 @@ export default function Suivi() {
     setScoreHebdomadaire(Math.round((repasAlignesHebdo / 28) * 100));
   };
 
+  // Fonction pour enregistrer un repas
   const handleSaveRepas = async (data) => {
-    const { error } = await supabase.from('repas_reels').insert([data]);
+    const { error } = await supabase.from('repas_reels').insert([{ ...data, date: selectedDate }]); // Enregistrement avec la date sélectionnée
     if (error) {
       setSnackbar({ open: true, message: "Erreur lors de l'enregistrement du repas.", type: "error" });
     } else {
@@ -137,6 +142,28 @@ export default function Suivi() {
       setLoading(false);
     }
   };
+
+  // Recherche dynamique via Open Food Facts
+  useEffect(() => {
+    if (aliment) {
+      setLoadingSuggestions(true);
+      axios
+        .get(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(aliment)}&search_simple=1&action=process&json=1&page_size=5`)
+        .then((res) => {
+          const produits = res.data.products || [];
+          const suggestions = produits.map((p) => ({
+            nom: p.product_name || "Aliment inconnu",
+            categorie: p.categories_tags?.[0] || "non catégorisé",
+            kcal: p.nutriments?.["energy-kcal_100g"] || 0,
+          }));
+          setSuggestions(suggestions);
+        })
+        .catch(() => setSuggestions([]))
+        .finally(() => setLoadingSuggestions(false));
+    } else {
+      setSuggestions([]);
+    }
+  }, [aliment]);
 
   return (
     <div style={{
@@ -155,26 +182,56 @@ export default function Suivi() {
         🥗 Suivi alimentaire du jour
       </h1>
 
-      <div style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        gap: 8,
-        marginBottom: 24,
-      }}>
-        <span
+      {/* Sélecteur de date */}
+      <div style={{ textAlign: "center", marginBottom: 24 }}>
+        <label htmlFor="date-select" style={{ fontWeight: 600, marginRight: 8 }}>Sélectionnez une date :</label>
+        <input
+          id="date-select"
+          type="date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
           style={{
-            background: extrasRestants > 0 ? "#4caf50" : "#f44336",
-            color: "#fff",
-            borderRadius: 12,
-            padding: "4px 12px",
-            fontWeight: 600,
-            fontSize: 15,
-            letterSpacing: 1,
+            padding: "8px",
+            borderRadius: "4px",
+            border: "1px solid #ccc",
+            fontSize: "14px",
           }}
-        >
-          Extras restants cette semaine : {extrasRestants}
-        </span>
+        />
+      </div>
+
+      {/* Recherche d'aliments */}
+      <div style={{ marginBottom: 24 }}>
+        <label htmlFor="aliment-input" style={{ fontWeight: 600, marginRight: 8 }}>Rechercher un aliment :</label>
+        <input
+          id="aliment-input"
+          type="text"
+          value={aliment}
+          onChange={(e) => setAliment(e.target.value)}
+          placeholder="Saisissez un aliment"
+          style={{
+            padding: "8px",
+            borderRadius: "4px",
+            border: "1px solid #ccc",
+            fontSize: "14px",
+          }}
+        />
+        {loadingSuggestions && <div>Recherche en cours...</div>}
+        {suggestions.length > 0 && (
+          <ul style={{ background: "#f9f9f9", border: "1px solid #ccc", borderRadius: 8, padding: 8, marginTop: 4 }}>
+            {suggestions.map((s, index) => (
+              <li
+                key={index}
+                onClick={() => {
+                  setAliment(s.nom);
+                  setSnackbar({ open: true, message: `Aliment sélectionné : ${s.nom}`, type: "success" });
+                }}
+                style={{ cursor: "pointer", padding: 4 }}
+              >
+                {s.nom} - {s.kcal} kcal
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {loading ? (
@@ -184,7 +241,7 @@ export default function Suivi() {
         </div>
       ) : (
         <>
-          {["Petit-déjeuner", "Déjeuner", "Collation", "Dîner"].map((type) => (
+          {["Petit-déjeuner", "Déjeuner", "Collation", "Dîner", "Autre"].map((type) => (
             <div
               key={type}
               style={{
@@ -198,6 +255,7 @@ export default function Suivi() {
                   "Déjeuner": "#29b6f6",
                   "Collation": "#66bb6a",
                   "Dîner": "#ab47bc",
+                  "Autre": "#ff7043",
                 }[type]}`,
                 transition: "box-shadow 0.2s"
               }}
@@ -233,10 +291,10 @@ export default function Suivi() {
               </div>
               <RepasBloc
                 type={type}
-                date={new Date().toISOString().slice(0, 10)}
+                date={selectedDate} // Utilisation de la date sélectionnée
                 planCategorie={repasPlan[type]?.categorie}
                 extrasRestants={extrasRestants}
-                onSave={handleSaveRepas}
+                onSave={handleSaveRepas} // Correction : Fonction définie
               />
             </div>
           ))}
