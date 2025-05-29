@@ -2,7 +2,30 @@ import RepasBloc from "../components/workspaces/test/mon-plan-vital/components/R
 import { supabase } from '../lib/supabaseClient';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { extrasMessages } from "../src/utils/messages";
 
+// Utilitaire pour message cyclique (par clé locale)
+function pickMessage(array, key) {
+  if (!array || array.length === 0) return "";
+  let idx = 0;
+  if (typeof window !== "undefined" && window.localStorage) {
+    idx = Number(localStorage.getItem(key) || 0);
+    localStorage.setItem(key, (idx + 1) % array.length);
+  }
+  const msg = array[idx % array.length];
+  return msg;
+}
+
+// Utilitaires de date
+function isInLast7Days(dateString, refDateString) {
+  const now = new Date(refDateString);
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(now.getDate() - 6);
+  const target = new Date(dateString);
+  return target >= sevenDaysAgo && target <= now;
+}
+
+// Snackbar
 function Snackbar({ open, message, type = "info", onClose }) {
   if (!open) return null;
   return (
@@ -56,6 +79,107 @@ const repasIcons = {
   "Autre": "🍴",
 };
 
+// ----------- Composant dynamique Extras ---------
+function ExtrasQuotaDisplay({
+  extrasHorsQuota = [],
+  extrasTotalSemaine = [],
+  enReequilibrage = false,
+}) {
+  let cat = "";
+  let buttonLabel = "";
+  let buttonAction = null;
+
+  if (enReequilibrage) {
+    cat = "retour";
+  } else if (extrasTotalSemaine.length === 3) {
+    cat = "usedAll";
+  } else if (extrasTotalSemaine.length < 3) {
+    cat = "savedSome";
+  } else if (extrasHorsQuota.length === 1) {
+    cat = "plus1";
+  } else if (extrasHorsQuota.length === 2) {
+    cat = "plus2";
+    buttonLabel = "Planifier mes extras";
+    buttonAction = () => window.location.href = "/planification-alimentaire";
+  } else if (extrasHorsQuota.length >= 3) {
+    cat = "plus3";
+    buttonLabel = "Commencer un défi";
+    buttonAction = () => window.location.href = "/defi-re-equilibrage";
+  }
+
+  // Sécurise l'accès à extrasMessages[cat]
+  const arr = extrasMessages[cat] || [];
+  const message = pickMessage(arr, `msg_${cat}`);
+
+  return (
+    <div style={{ margin: "24px 0" }}>
+      <h3 style={{ fontWeight: 600, marginBottom: 8 }}>
+        Extras utilisés cette semaine :{" "}
+        <span style={{ color: "#e57373", fontSize: 20 }}>
+          {Math.min(3, extrasTotalSemaine.length)}/3
+        </span>
+      </h3>
+      {extrasHorsQuota.length > 0 && (
+        <div style={{
+          marginTop: 12,
+          borderRadius: 8,
+          padding: "8px 12px",
+          background: "#fffbe6",
+          border: "1px solid #ffe082",
+          color: "#ffa000"
+        }}>
+          <div style={{ fontWeight: 600 }}>
+            🟡 Au-delà du nécessaire
+          </div>
+          <ul>
+            {extrasHorsQuota.map((extra, i) => (
+              <li key={i}>
+                ↗ {extra.nom || "Extra"} —{" "}
+                <span style={{ color: "#aaa" }}>{extra.date?.slice(5, 10)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div style={{
+        marginTop: 10,
+        color: "#888",
+        background: "#f5f5f5",
+        borderRadius: 8,
+        padding: "10px 12px",
+        fontSize: 15,
+        textAlign: "center"
+      }}>
+        {message}
+      </div>
+
+      {buttonLabel && (
+        <div style={{ textAlign: "center", marginTop: 14 }}>
+          <button
+            style={{
+              background: buttonLabel === "Commencer un défi"
+                ? "linear-gradient(90deg,#d32f2f,#ffb300)"
+                : "linear-gradient(90deg,#1976d2,#26c6da)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 18,
+              padding: "10px 36px",
+              fontWeight: 700,
+              fontSize: 15,
+              boxShadow: "0 2px 10px rgba(38,198,218,0.08)",
+              cursor: "pointer"
+            }}
+            onClick={buttonAction}
+          >
+            {buttonLabel}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Suivi() {
   const [repasPlan, setRepasPlan] = useState({});
   const [repasSemaine, setRepasSemaine] = useState([]);
@@ -64,10 +188,17 @@ export default function Suivi() {
   const [scoreHebdomadaire, setScoreHebdomadaire] = useState(0);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", type: "info" });
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10)); // Date sélectionnée
-  const [aliment, setAliment] = useState(''); // Aliment saisi
-  const [suggestions, setSuggestions] = useState([]); // Suggestions d'aliments
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false); // Chargement des suggestions
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [aliment, setAliment] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  // Extras states
+  const [extrasDuJour, setExtrasDuJour] = useState([]);
+  const [extrasHorsQuota, setExtrasHorsQuota] = useState([]);
+  const [extrasTotalSemaine, setExtrasTotalSemaine] = useState([]);
+  const [showProgressionMessage, setShowProgressionMessage] = useState(false);
+  const [enReequilibrage, setEnReequilibrage] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -76,18 +207,89 @@ export default function Suivi() {
       const semaine = await fetchRepasSemaine();
       setRepasPlan(plan);
       setRepasSemaine(semaine);
-      setExtrasRestants(3 - calculerExtrasConsommes(semaine));
+
+      // Extras semaine courante
+      const extrasTotal = semaine.filter((repas) => repas.est_extra);
+      setExtrasTotalSemaine(extrasTotal);
+      const extrasAujourdHui = semaine.filter(
+        (repas) => repas.date === selectedDate && repas.est_extra
+      );
+      setExtrasDuJour(extrasAujourdHui);
+
+      // 7 jours glissants pour affichage "au-delà du nécessaire"
+      const extrasHorsQuotaAll = extrasTotal.slice(3);
+      const extrasHorsQuota7j = extrasHorsQuotaAll.filter(extra =>
+        isInLast7Days(extra.date, selectedDate)
+      );
+      setExtrasHorsQuota(extrasHorsQuota7j);
+
+      setExtrasRestants(Math.max(0, 3 - extrasTotal.length));
+
+      // Détection retour à l’équilibre (bloc gris)
+      const d = new Date(selectedDate);
+      const day = d.getDay();
+      // Début de semaine = lundi
+      const startCurrent = new Date(d);
+      startCurrent.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+      const endCurrent = new Date(startCurrent);
+      endCurrent.setDate(startCurrent.getDate() + 6);
+
+      // Semaine précédente
+      const startPrev = new Date(startCurrent);
+      startPrev.setDate(startCurrent.getDate() - 7);
+      const endPrev = new Date(startCurrent);
+      endPrev.setDate(startCurrent.getDate() - 1);
+
+      const extrasHorsQuotaPrevWeek = extrasHorsQuotaAll.filter(extra =>
+        new Date(extra.date) >= startPrev && new Date(extra.date) <= endPrev
+      );
+      const extrasHorsQuotaCurrentWeek = extrasHorsQuotaAll.filter(extra =>
+        new Date(extra.date) >= startCurrent && new Date(extra.date) <= endCurrent
+      );
+      const retourEquilibre = extrasHorsQuotaPrevWeek.length > 0 && extrasHorsQuotaCurrentWeek.length === 0 && extrasHorsQuota7j.length > 0;
+      setEnReequilibrage(retourEquilibre);
+
       calculerScores(semaine);
       setLoading(false);
     };
     fetchData();
+    // eslint-disable-next-line
   }, [selectedDate]);
+
+  // Détection du retour à l'équilibre et gestion du message de progression
+  useEffect(() => {
+    const d = new Date(selectedDate);
+    const day = d.getDay();
+    const debutSemaineCourante = new Date(d);
+    debutSemaineCourante.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    const finSemaineCourante = new Date(debutSemaineCourante);
+    finSemaineCourante.setDate(debutSemaineCourante.getDate() + 6);
+
+    const debutSemainePrecedente = new Date(debutSemaineCourante);
+    debutSemainePrecedente.setDate(debutSemaineCourante.getDate() - 7);
+    const finSemainePrecedente = new Date(debutSemaineCourante);
+    finSemainePrecedente.setDate(debutSemaineCourante.getDate() - 1);
+
+    // Extras hors quota de chaque semaine
+    const extrasHorsQuotaAll = repasSemaine.filter((repas) => repas.est_extra).slice(3);
+    const extrasHorsQuotaCourante = extrasHorsQuotaAll.filter(
+      (repas) =>
+        new Date(repas.date) >= debutSemaineCourante &&
+        new Date(repas.date) <= finSemaineCourante
+    );
+    const extrasHorsQuotaPrecedente = extrasHorsQuotaAll.filter(
+      (repas) =>
+        new Date(repas.date) >= debutSemainePrecedente &&
+        new Date(repas.date) <= finSemainePrecedente
+    );
+    setShowProgressionMessage(extrasHorsQuotaPrecedente.length > 0 && extrasHorsQuotaCourante.length === 0);
+  }, [repasSemaine, selectedDate]);
 
   const fetchRepasPlan = async () => {
     const { data, error } = await supabase
       .from('plan_alimentaire')
       .select('*')
-      .eq('date', selectedDate); // Utilisation de la date sélectionnée
+      .eq('date', selectedDate);
 
     if (error) {
       setSnackbar({ open: true, message: "Erreur lors de la récupération des repas prévus.", type: "error" });
@@ -114,22 +316,17 @@ export default function Suivi() {
     return data;
   };
 
-  const calculerExtrasConsommes = (repasSemaine) =>
-    repasSemaine.filter((repas) => repas.est_extra).length;
-
   const calculerScores = (repasSemaine) => {
-    const repasDuJour = repasSemaine.filter((repas) => repas.date === selectedDate); // Utilisation de la date sélectionnée
+    const repasDuJour = repasSemaine.filter((repas) => repas.date === selectedDate);
     const repasAlignes = repasDuJour.filter((repas) => repas.regle_respectee).length;
     const totalRepas = repasDuJour.length;
     setScoreJournalier(Math.round((repasAlignes / (totalRepas || 1)) * 100));
-
     const repasAlignesHebdo = repasSemaine.filter((repas) => repas.regle_respectee).length;
     setScoreHebdomadaire(Math.round((repasAlignesHebdo / 28) * 100));
   };
 
-  // Fonction pour enregistrer un repas
   const handleSaveRepas = async (data) => {
-    const { error } = await supabase.from('repas_reels').insert([{ ...data, date: selectedDate }]); // Enregistrement avec la date sélectionnée
+    const { error } = await supabase.from('repas_reels').insert([{ ...data, date: selectedDate }]);
     if (error) {
       setSnackbar({ open: true, message: "Erreur lors de l'enregistrement du repas.", type: "error" });
     } else {
@@ -137,24 +334,31 @@ export default function Suivi() {
       setLoading(true);
       const updatedRepasSemaine = await fetchRepasSemaine();
       setRepasSemaine(updatedRepasSemaine);
-      setExtrasRestants(3 - calculerExtrasConsommes(updatedRepasSemaine));
-      calculerScores(updatedRepasSemaine);
       setLoading(false);
     }
   };
 
-  // Recherche dynamique via Open Food Facts
+  // ----------- Suggestions Nutritionix -----------
   useEffect(() => {
     if (aliment) {
       setLoadingSuggestions(true);
       axios
-        .get(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(aliment)}&search_simple=1&action=process&json=1&page_size=5`)
+        .get('https://trackapi.nutritionix.com/v2/search/instant', {
+          params: { query: aliment, branded: true, common: true },
+          headers: {
+            'x-app-id': 'e50d45e3',
+            'x-app-key': '214c19713df698bea9803bebbf42846f'
+          }
+        })
         .then((res) => {
-          const produits = res.data.products || [];
+          const produits = [
+            ...(res.data.common || []),
+            ...(res.data.branded || [])
+          ];
           const suggestions = produits.map((p) => ({
-            nom: p.product_name || "Aliment inconnu",
-            categorie: p.categories_tags?.[0] || "non catégorisé",
-            kcal: p.nutriments?.["energy-kcal_100g"] || 0,
+            nom: p.food_name || p.brand_name_item_name || "Aliment inconnu",
+            categorie: p.tags ? p.tags.food_group || "non catégorisé" : "non catégorisé",
+            kcal: p.nf_calories || p.full_nutrients?.find(n => n.attr_id === 208)?.value || 0,
           }));
           setSuggestions(suggestions);
         })
@@ -178,9 +382,33 @@ export default function Suivi() {
         type={snackbar.type}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
       />
-      <h1 style={{ textAlign: "center", marginBottom: 8 }}>
+      <h1 style={{
+        textAlign: "center",
+        marginBottom: 8,
+        fontWeight: 800,
+        fontSize: 32,
+        letterSpacing: "0.5px"
+      }}>
         🥗 Suivi alimentaire du jour
       </h1>
+
+      {/* Message de progression retour à l'équilibre */}
+      {showProgressionMessage && (
+        <div style={{
+          background: "linear-gradient(90deg,#e3f6e5,#f5fff7 80%)",
+          color: "#357a38",
+          borderRadius: 10,
+          padding: "16px 20px",
+          margin: "0 0 20px 0",
+          fontWeight: 700,
+          textAlign: "center",
+          fontSize: 16,
+          boxShadow: "0 2px 16px rgba(76,175,80,0.08)"
+        }}>
+          La semaine dernière, tu avais franchi ton quota plusieurs fois.<br />
+          Cette semaine, tu es revenu(e) à l’essentiel. C’est un vrai pas vers la régularité.
+        </div>
+      )}
 
       {/* Sélecteur de date */}
       <div style={{ textAlign: "center", marginBottom: 24 }}>
@@ -200,7 +428,7 @@ export default function Suivi() {
       </div>
 
       {/* Recherche d'aliments */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 24, maxWidth: 340, marginLeft: "auto", marginRight: "auto" }}>
         <label htmlFor="aliment-input" style={{ fontWeight: 600, marginRight: 8 }}>Rechercher un aliment :</label>
         <input
           id="aliment-input"
@@ -213,11 +441,21 @@ export default function Suivi() {
             borderRadius: "4px",
             border: "1px solid #ccc",
             fontSize: "14px",
+            width: "calc(100% - 8px)",
+            marginTop: 4
           }}
         />
-        {loadingSuggestions && <div>Recherche en cours...</div>}
+        {loadingSuggestions && <div style={{ fontSize: 13, marginTop: 6 }}>Recherche en cours...</div>}
         {suggestions.length > 0 && (
-          <ul style={{ background: "#f9f9f9", border: "1px solid #ccc", borderRadius: 8, padding: 8, marginTop: 4 }}>
+          <ul style={{
+            background: "#f9f9f9",
+            border: "1px solid #ccc",
+            borderRadius: 8,
+            padding: 8,
+            marginTop: 4,
+            fontSize: 14,
+            boxShadow: "0 1px 8px rgba(0,0,0,0.06)"
+          }}>
             {suggestions.map((s, index) => (
               <li
                 key={index}
@@ -225,7 +463,7 @@ export default function Suivi() {
                   setAliment(s.nom);
                   setSnackbar({ open: true, message: `Aliment sélectionné : ${s.nom}`, type: "success" });
                 }}
-                style={{ cursor: "pointer", padding: 4 }}
+                style={{ cursor: "pointer", padding: 4, transition: "background 0.12s" }}
               >
                 {s.nom} - {s.kcal} kcal
               </li>
@@ -233,6 +471,13 @@ export default function Suivi() {
           </ul>
         )}
       </div>
+
+      {/* Bloc gestion extras ENRICHI */}
+      <ExtrasQuotaDisplay
+        extrasHorsQuota={extrasHorsQuota}
+        extrasTotalSemaine={extrasTotalSemaine}
+        enReequilibrage={enReequilibrage}
+      />
 
       {loading ? (
         <div style={{ textAlign: "center", margin: "48px 0" }}>
@@ -291,10 +536,10 @@ export default function Suivi() {
               </div>
               <RepasBloc
                 type={type}
-                date={selectedDate} // Utilisation de la date sélectionnée
+                date={selectedDate}
                 planCategorie={repasPlan[type]?.categorie}
                 extrasRestants={extrasRestants}
-                onSave={handleSaveRepas} // Correction : Fonction définie
+                onSave={handleSaveRepas}
               />
             </div>
           ))}
