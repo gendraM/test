@@ -181,6 +181,20 @@ function ExtrasQuotaDisplay({
 }
 
 export default function Suivi() {
+  // ----------- Gestion du repas sélectionné (URL ou bouton) -----------
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const repasParam = params?.get('repas');
+  // Map URL -> libellé
+  const mapType = {
+    'petit-dejeuner': 'Petit-déjeuner',
+    'dejeuner': 'Déjeuner',
+    'collation': 'Collation',
+    'diner': 'Dîner',
+    'autre': 'Autre'
+  };
+  const [selectedType, setSelectedType] = useState(repasParam ? mapType[repasParam] : null);
+  // ---------------------------------------------------------------
+
   const [repasPlan, setRepasPlan] = useState({});
   const [repasSemaine, setRepasSemaine] = useState([]);
   const [extrasRestants, setExtrasRestants] = useState(3);
@@ -369,6 +383,7 @@ export default function Suivi() {
     }
   }, [aliment]);
 
+  // ----------- AFFICHAGE -----------
   return (
     <div style={{
       maxWidth: 700,
@@ -485,86 +500,114 @@ export default function Suivi() {
           <div>Chargement en cours…</div>
         </div>
       ) : (
-        <>
-          {["Petit-déjeuner", "Déjeuner", "Collation", "Dîner", "Autre"].map((type) => (
-            <div
-              key={type}
-              style={{
-                background: "#fff",
-                borderRadius: 16,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
-                padding: 20,
-                marginBottom: 24,
-                borderLeft: `6px solid ${{
-                  "Petit-déjeuner": "#ffa726",
-                  "Déjeuner": "#29b6f6",
-                  "Collation": "#66bb6a",
-                  "Dîner": "#ab47bc",
-                  "Autre": "#ff7043",
-                }[type]}`,
-                transition: "box-shadow 0.2s"
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-                <span style={{ fontSize: 24 }}>{repasIcons[type]}</span>
-                <span style={{ fontWeight: 600, fontSize: 18 }}>{type}</span>
-              </div>
-              <div
-                style={{
-                  background: "#f5f5f5",
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  marginBottom: 6,
-                  color: "#333",
-                  fontSize: 15,
-                }}
-              >
-                <strong>Repas prévu :</strong>{" "}
-                {repasPlan[type]?.aliment ? (
-                  <>
-                    {repasPlan[type]?.aliment}{" "}
-                    <span style={{
-                      background: "#eee", borderRadius: 8, padding: "2px 8px", marginLeft: 4,
-                      fontSize: 13, color: "#888"
-                    }}>
-                      {repasPlan[type]?.categorie}
-                    </span>
-                  </>
-                ) : (
-                  <span style={{ color: "#bbb" }}>Non défini</span>
-                )}
-              </div>
-              <RepasBloc
-                type={type}
-                date={selectedDate}
-                planCategorie={repasPlan[type]?.categorie}
-                extrasRestants={extrasRestants}
-                onSave={handleSaveRepas}
-              />
-            </div>
-          ))}
-
-          <div style={{
-            marginTop: 24,
-            background: "#fafafa",
-            borderRadius: 12,
-            padding: "20px 16px",
-            boxShadow: "0 1px 5px rgba(0,0,0,0.03)"
-          }}>
-            <h2 style={{ margin: "0 0 16px 0" }}>Mes scores</h2>
-            <div style={{ marginBottom: 12 }}>
-              <span style={{ fontWeight: 500 }}>Score journalier : </span>
-              <span style={{ fontWeight: 700, color: "#1976d2", fontSize: 18 }}>{scoreJournalier}%</span>
-              <ProgressBar value={scoreJournalier} color="#1976d2" />
-            </div>
-            <div>
-              <span style={{ fontWeight: 500 }}>Score hebdomadaire : </span>
-              <span style={{ fontWeight: 700, color: "#43a047", fontSize: 18 }}>{scoreHebdomadaire}%</span>
-              <ProgressBar value={scoreHebdomadaire} color="#43a047" />
+        // ----------- NOUVEAU : Sélection ou bloc repas ---------
+        !selectedType ? (
+          <div style={{ textAlign: "center", margin: "2rem 0" }}>
+            <h2>Quel repas veux-tu consigner ?</h2>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button onClick={() => setSelectedType("Petit-déjeuner")}>🥐 Petit-déjeuner</button>
+              <button onClick={() => setSelectedType("Déjeuner")}>🍽️ Déjeuner</button>
+              <button onClick={() => setSelectedType("Collation")}>🍏 Collation</button>
+              <button onClick={() => setSelectedType("Dîner")}>🍲 Dîner</button>
+              <button onClick={() => setSelectedType("Autre")}>🍴 Autre</button>
             </div>
           </div>
-        </>
+        ) : (
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
+              padding: 20,
+              marginBottom: 24,
+              borderLeft: `6px solid ${{
+                "Petit-déjeuner": "#ffa726",
+                "Déjeuner": "#29b6f6",
+                "Collation": "#66bb6a",
+                "Dîner": "#ab47bc",
+                "Autre": "#ff7043",
+              }[selectedType]}`,
+              transition: "box-shadow 0.2s"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <span style={{ fontSize: 24 }}>{repasIcons[selectedType]}</span>
+              <span style={{ fontWeight: 600, fontSize: 18 }}>{selectedType}</span>
+            </div>
+            <div
+              style={{
+                background: "#f5f5f5",
+                borderRadius: 8,
+                padding: "8px 12px",
+                marginBottom: 6,
+                color: "#333",
+                fontSize: 15,
+              }}
+            >
+              <strong>Repas prévu :</strong>{" "}
+              {repasPlan[selectedType]?.aliment ? (
+                <>
+                  {repasPlan[selectedType]?.aliment}{" "}
+                  <span style={{
+                    background: "#eee", borderRadius: 8, padding: "2px 8px", marginLeft: 4,
+                    fontSize: 13, color: "#888"
+                  }}>
+                    {repasPlan[selectedType]?.categorie}
+                  </span>
+                </>
+              ) : (
+                <span style={{ color: "#bbb" }}>Non défini</span>
+              )}
+            </div>
+            <RepasBloc
+              type={selectedType}
+              date={selectedDate}
+              planCategorie={repasPlan[selectedType]?.categorie}
+              extrasRestants={extrasRestants}
+              onSave={handleSaveRepas}
+            />
+            {/* Bouton pour revenir à la sélection de type */}
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <button
+                style={{
+                  background: "#e0e0e0",
+                  color: "#333",
+                  border: "none",
+                  borderRadius: 18,
+                  padding: "8px 22px",
+                  fontWeight: 600,
+                  fontSize: 15,
+                  marginTop: 8,
+                  cursor: "pointer"
+                }}
+                onClick={() => setSelectedType(null)}
+              >
+                ⬅️ Changer de type de repas
+              </button>
+            </div>
+          </div>
+        )
       )}
+
+      <div style={{
+        marginTop: 24,
+        background: "#fafafa",
+        borderRadius: 12,
+        padding: "20px 16px",
+        boxShadow: "0 1px 5px rgba(0,0,0,0.03)"
+      }}>
+        <h2 style={{ margin: "0 0 16px 0" }}>Mes scores</h2>
+        <div style={{ marginBottom: 12 }}>
+          <span style={{ fontWeight: 500 }}>Score journalier : </span>
+          <span style={{ fontWeight: 700, color: "#1976d2", fontSize: 18 }}>{scoreJournalier}%</span>
+          <ProgressBar value={scoreJournalier} color="#1976d2" />
+        </div>
+        <div>
+          <span style={{ fontWeight: 500 }}>Score hebdomadaire : </span>
+          <span style={{ fontWeight: 700, color: "#43a047", fontSize: 18 }}>{scoreHebdomadaire}%</span>
+          <ProgressBar value={scoreHebdomadaire} color="#43a047" />
+        </div>
+      </div>
 
       <div style={{
         marginTop: 36,

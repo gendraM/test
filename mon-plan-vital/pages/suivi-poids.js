@@ -453,13 +453,17 @@ export default function SuiviPoids() {
         </button>
       </div>
 
-      {/* Bouton supplémentaire */}
-      <button
-        style={{ marginTop: 20, padding: "0.7rem 1.2rem", background: "#2980b9", color: "#fff", border: "none", borderRadius: 8, fontSize: "1rem", cursor: "pointer" }}
-        onClick={() => window.location.href = '/suivi'}
-      >
-        Consigner un repas
-      </button>
+             {/* BOUTONS CONSIGNER UN REPAS */}
+      <div style={{ marginTop: 20, textAlign: 'center' }}>
+        <span style={{ fontWeight: 600 }}>Consigner un repas :</span>
+        <div style={{ marginTop: 10, display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button style={styles.navButton} onClick={() => window.location.href = '/suivi?repas=petit-dejeuner'}>🥐 Petit-déjeuner</button>
+          <button style={styles.navButton} onClick={() => window.location.href = '/suivi?repas=dejeuner'}>🍽️ Déjeuner</button>
+          <button style={styles.navButton} onClick={() => window.location.href = '/suivi?repas=collation'}>🍏 Collation</button>
+          <button style={styles.navButton} onClick={() => window.location.href = '/suivi?repas=diner'}>🍲 Dîner</button>
+          <button style={styles.navButton} onClick={() => window.location.href = '/suivi?repas=autre'}>🍴 Autre</button>
+        </div>
+      </div>
     </div>
   )
 }
