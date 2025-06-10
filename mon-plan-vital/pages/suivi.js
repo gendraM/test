@@ -210,6 +210,7 @@ export default function Suivi() {
   const [extrasTotalSemaine, setExtrasTotalSemaine] = useState([]);
   const [showProgressionMessage, setShowProgressionMessage] = useState(false);
   const [enReequilibrage, setEnReequilibrage] = useState(false);
+  const [repasPlanifie, setRepasPlanifie] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -295,6 +296,18 @@ export default function Suivi() {
     );
     setShowProgressionMessage(extrasHorsQuotaPrecedente.length > 0 && extrasHorsQuotaCourante.length === 0);
   }, [repasSemaine, selectedDate]);
+
+  useEffect(() => {
+    const fetchRepasPlanifie = async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data } = await supabase
+        .from("repas_planifies")
+        .select("*")
+        .eq("date", today);
+      setRepasPlanifie(data?.[0] || null);
+    };
+    fetchRepasPlanifie();
+  }, []);
 
   const fetchRepasPlan = async () => {
     const { data, error } = await supabase
@@ -554,6 +567,21 @@ export default function Suivi() {
             cursor: "pointer"
           }}>
             🗑️ Gérer/Supprimer mes repas
+          </button>
+        </Link>
+        <Link href="/plan">
+          <button style={{
+            background: "#1976d2",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "10px 24px",
+            fontWeight: 600,
+            fontSize: 16,
+            cursor: "pointer",
+            marginTop: 16
+          }}>
+            📅 Planifier mes repas
           </button>
         </Link>
       </div>
