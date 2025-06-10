@@ -47,9 +47,18 @@ export default function Plan() {
   const [suggestions, setSuggestions] = useState([]);
   const [regle, setRegle] = useState("");
   const [categorie, setCategorie] = useState("");
-  const [mantra, setMantra] = useState(() => localStorage.getItem("mantra") || "");
-  const [objectifPoids, setObjectifPoids] = useState(() => localStorage.getItem("objectifPoids") || "");
+  // Correction : initialisation sans localStorage
+  const [mantra, setMantra] = useState("");
+  const [objectifPoids, setObjectifPoids] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Patch : lecture de localStorage uniquement côté client
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setMantra(localStorage.getItem("mantra") || "");
+      setObjectifPoids(localStorage.getItem("objectifPoids") || "");
+    }
+  }, []);
 
   // Edition inline
   const [isEditing, setIsEditing] = useState(null);
