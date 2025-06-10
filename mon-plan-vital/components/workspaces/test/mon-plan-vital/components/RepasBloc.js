@@ -69,9 +69,12 @@ export default function RepasBloc({ type, date, planCategorie, routineCount = 0,
   const [showDefi, setShowDefi] = useState(false)
   const [loadingKcal, setLoadingKcal] = useState(false)
 
+  // Suggestions Nutritionix
+  const [suggestions, setSuggestions] = useState([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+
   // --- Compteur d'extras restants cette semaine ---
   const quota = 3 // quota hebdo d'extras, adapte selon ton besoin
-  // On suppose que repasSemaine est un tableau de repas de la semaine [{est_extra: true, ...}]
   const extrasCount = repasSemaine.filter(r => r.est_extra).length
   const extrasRestants = Math.max(0, quota - extrasCount)
 
@@ -120,6 +123,37 @@ export default function RepasBloc({ type, date, planCategorie, routineCount = 0,
   }, [aliment, quantite])
   // --- FIN AJOUT AUTOMATIQUE DES KCAL ---
 
+  // Suggestions Nutritionix (recherche intelligente)
+  useEffect(() => {
+    if (aliment && aliment.length > 1) {
+      setLoadingSuggestions(true)
+      axios
+        .get('https://trackapi.nutritionix.com/v2/search/instant', {
+          params: { query: aliment, branded: true, common: true },
+          headers: {
+            'x-app-id': 'e50d45e3',
+            'x-app-key': '214c19713df698bea9803bebbf42846f'
+          }
+        })
+        .then((res) => {
+          const produits = [
+            ...(res.data.common || []),
+            ...(res.data.branded || [])
+          ]
+          const suggestions = produits.map((p) => ({
+            nom: p.food_name || p.brand_name_item_name || "Aliment inconnu",
+            categorie: p.tags ? p.tags.food_group || "non catégorisé" : "non catégorisé",
+            kcal: p.nf_calories || p.full_nutrients?.find(n => n.attr_id === 208)?.value || 0,
+          }))
+          setSuggestions(suggestions)
+        })
+        .catch(() => setSuggestions([]))
+        .finally(() => setLoadingSuggestions(false))
+    } else {
+      setSuggestions([])
+    }
+  }, [aliment])
+
   useEffect(() => {
     const context = { estExtra, satiete, categorie, planCategorie, routineCount, extrasRestants }
     const blocs = rules.filter(rule => rule.check(context))
@@ -143,6 +177,7 @@ export default function RepasBloc({ type, date, planCategorie, routineCount = 0,
     setPourquoi('')
     setRessenti('')
     setDetailsSignaux([])
+    setSuggestions([])
   }
 
   const handleAccepteDefi = () => {
@@ -184,14 +219,43 @@ export default function RepasBloc({ type, date, planCategorie, routineCount = 0,
         <h3>{type} du {date}</h3>
         <label>Aliment mangé</label>
         <input
-          list="aliments"
           value={aliment}
           onChange={e => setAliment(e.target.value)}
+          placeholder="Saisissez un aliment"
+          autoComplete="off"
           required
+          style={{ marginBottom: 0 }}
         />
-        <datalist id="aliments">
-          {referentielAliments.map(a => <option key={a.nom} value={a.nom} />)}
-        </datalist>
+        {/* Suggestions Nutritionix */}
+        {loadingSuggestions && <div style={{ fontSize: 13, marginTop: 6 }}>Recherche en cours...</div>}
+        {suggestions.length > 0 && (
+          <ul style={{
+            background: "#f9f9f9",
+            border: "1px solid #ccc",
+            borderRadius: 8,
+            padding: 8,
+            marginTop: 4,
+            fontSize: 14,
+            boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
+            maxHeight: 180,
+            overflowY: "auto"
+          }}>
+            {suggestions.map((s, index) => (
+              <li
+                key={index}
+                onClick={() => {
+                  setAliment(s.nom)
+                  setCategorie(s.categorie)
+                  setKcal(s.kcal)
+                  setSuggestions([])
+                }}
+                style={{ cursor: "pointer", padding: 4, transition: "background 0.12s" }}
+              >
+                {s.nom} - {s.kcal} kcal
+              </li>
+            ))}
+          </ul>
+        )}
 
         <label>Catégorie</label>
         <input

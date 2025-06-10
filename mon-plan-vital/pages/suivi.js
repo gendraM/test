@@ -1,8 +1,8 @@
 import RepasBloc from "../components/workspaces/test/mon-plan-vital/components/RepasBloc";
 import { supabase } from '../lib/supabaseClient';
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import { extrasMessages } from "../src/utils/messages";
+import Link from 'next/link';
 
 // Utilitaire pour message cyclique (par clé locale)
 function pickMessage(array, key) {
@@ -203,9 +203,6 @@ export default function Suivi() {
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", type: "info" });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
-  const [aliment, setAliment] = useState('');
-  const [suggestions, setSuggestions] = useState([]);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
   // Extras states
   const [extrasDuJour, setExtrasDuJour] = useState([]);
@@ -352,37 +349,6 @@ export default function Suivi() {
     }
   };
 
-  // ----------- Suggestions Nutritionix -----------
-  useEffect(() => {
-    if (aliment) {
-      setLoadingSuggestions(true);
-      axios
-        .get('https://trackapi.nutritionix.com/v2/search/instant', {
-          params: { query: aliment, branded: true, common: true },
-          headers: {
-            'x-app-id': 'e50d45e3',
-            'x-app-key': '214c19713df698bea9803bebbf42846f'
-          }
-        })
-        .then((res) => {
-          const produits = [
-            ...(res.data.common || []),
-            ...(res.data.branded || [])
-          ];
-          const suggestions = produits.map((p) => ({
-            nom: p.food_name || p.brand_name_item_name || "Aliment inconnu",
-            categorie: p.tags ? p.tags.food_group || "non catégorisé" : "non catégorisé",
-            kcal: p.nf_calories || p.full_nutrients?.find(n => n.attr_id === 208)?.value || 0,
-          }));
-          setSuggestions(suggestions);
-        })
-        .catch(() => setSuggestions([]))
-        .finally(() => setLoadingSuggestions(false));
-    } else {
-      setSuggestions([]);
-    }
-  }, [aliment]);
-
   // ----------- AFFICHAGE -----------
   return (
     <div style={{
@@ -442,51 +408,6 @@ export default function Suivi() {
         />
       </div>
 
-      {/* Recherche d'aliments */}
-      <div style={{ marginBottom: 24, maxWidth: 340, marginLeft: "auto", marginRight: "auto" }}>
-        <label htmlFor="aliment-input" style={{ fontWeight: 600, marginRight: 8 }}>Rechercher un aliment :</label>
-        <input
-          id="aliment-input"
-          type="text"
-          value={aliment}
-          onChange={(e) => setAliment(e.target.value)}
-          placeholder="Saisissez un aliment"
-          style={{
-            padding: "8px",
-            borderRadius: "4px",
-            border: "1px solid #ccc",
-            fontSize: "14px",
-            width: "calc(100% - 8px)",
-            marginTop: 4
-          }}
-        />
-        {loadingSuggestions && <div style={{ fontSize: 13, marginTop: 6 }}>Recherche en cours...</div>}
-        {suggestions.length > 0 && (
-          <ul style={{
-            background: "#f9f9f9",
-            border: "1px solid #ccc",
-            borderRadius: 8,
-            padding: 8,
-            marginTop: 4,
-            fontSize: 14,
-            boxShadow: "0 1px 8px rgba(0,0,0,0.06)"
-          }}>
-            {suggestions.map((s, index) => (
-              <li
-                key={index}
-                onClick={() => {
-                  setAliment(s.nom);
-                  setSnackbar({ open: true, message: `Aliment sélectionné : ${s.nom}`, type: "success" });
-                }}
-                style={{ cursor: "pointer", padding: 4, transition: "background 0.12s" }}
-              >
-                {s.nom} - {s.kcal} kcal
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
       {/* Bloc gestion extras ENRICHI */}
       <ExtrasQuotaDisplay
         extrasHorsQuota={extrasHorsQuota}
@@ -500,7 +421,6 @@ export default function Suivi() {
           <div>Chargement en cours…</div>
         </div>
       ) : (
-        // ----------- NOUVEAU : Sélection ou bloc repas ---------
         !selectedType ? (
           <div style={{ textAlign: "center", margin: "2rem 0" }}>
             <h2>Quel repas veux-tu consigner ?</h2>
@@ -565,8 +485,8 @@ export default function Suivi() {
               planCategorie={repasPlan[selectedType]?.categorie}
               extrasRestants={extrasRestants}
               onSave={handleSaveRepas}
+              setSnackbar={setSnackbar}
             />
-            {/* Bouton pour revenir à la sélection de type */}
             <div style={{ textAlign: 'center', marginTop: 16 }}>
               <button
                 style={{
@@ -616,6 +536,26 @@ export default function Suivi() {
         textAlign: "center"
       }}>
         <span>Astuce : Cliquez sur un repas pour saisir ce que vous avez mangé.<br />Les extras sont limités à 3 par semaine, utilisez-les à bon escient !</span>
+      </div>
+
+      <div style={{
+        textAlign: "center",
+        marginTop: 32
+      }}>
+        <Link href="/repas">
+          <button style={{
+            background: "#f44336",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "10px 24px",
+            fontWeight: 600,
+            fontSize: 16,
+            cursor: "pointer"
+          }}>
+            🗑️ Gérer/Supprimer mes repas
+          </button>
+        </Link>
       </div>
     </div>
   );
