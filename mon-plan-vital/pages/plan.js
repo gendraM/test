@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
-import Papa from "papaparse";
 import referentielAliments from "../data/referentiel";
-import { useRouter } from "next/router";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
 
 const typesRepas = [
   { nom: "Petit-déjeuner", emoji: "🥐", color: "#ffe082" },
@@ -11,7 +11,8 @@ const typesRepas = [
   { nom: "Dîner", emoji: "🍲", color: "#c8e6c9" },
   { nom: "Collation", emoji: "🍏", color: "#f8bbd0" }
 ];
-const joursSemaine = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+
+const joursSemaine = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 const moisNoms = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
@@ -26,20 +27,31 @@ const reglesGestion = {
 };
 
 function getDaysInMonth(year, month) {
-  const date = new Date(year, month, 1);
   const days = [];
-  while (date.getMonth() === month) {
-    days.push(new Date(date));
-    date.setDate(date.getDate() + 1);
+  const nbDays = new Date(year, month + 1, 0).getDate();
+  for (let i = 1; i <= nbDays; i++) {
+    days.push(new Date(year, month, i));
   }
   return days;
 }
+function getDayOfWeek(date) {
+  const map = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+  return map[date.getDay()];
+}
+function toYYYYMMDD(date) {
+  const d = date.getDate().toString().padStart(2, "0");
+  const m = (date.getMonth() + 1).toString().padStart(2, "0");
+  const y = date.getFullYear();
+  return `${y}-${m}-${d}`;
+}
 
 export default function Plan() {
-  const router = useRouter();
+  // Etat navigation
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
+
+  // Etat planning
   const [planning, setPlanning] = useState({});
   const [aliment, setAliment] = useState("");
   const [type, setType] = useState(typesRepas[0].nom);
@@ -47,49 +59,42 @@ export default function Plan() {
   const [suggestions, setSuggestions] = useState([]);
   const [regle, setRegle] = useState("");
   const [categorie, setCategorie] = useState("");
-  // Correction : initialisation sans localStorage
-  const [mantra, setMantra] = useState("");
-  const [objectifPoids, setObjectifPoids] = useState("");
   const [loading, setLoading] = useState(false);
-
-  // Patch : lecture de localStorage uniquement côté client
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setMantra(localStorage.getItem("mantra") || "");
-      setObjectifPoids(localStorage.getItem("objectifPoids") || "");
-    }
-  }, []);
-
-  // Edition inline
-  const [isEditing, setIsEditing] = useState(null);
-  const [editAliment, setEditAliment] = useState("");
-
-  // Comparaison repas respectés
+  const [importFeedback, setImportFeedback] = useState("");
   const [comparaison, setComparaison] = useState({ semaineActuelle: 0, semainePrecedente: 0 });
+
+  // Etat motivation/mois
+  const [mantra, setMantra] = useState(() => localStorage.getItem("mantra") || "");
+  const [objectif, setObjectif] = useState(() => localStorage.getItem("objectif") || "");
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "");
+  const [valideInfos, setValideInfos] = useState({
+    mantra: localStorage.getItem("mantra") || "",
+    objectif: localStorage.getItem("objectif") || "",
+    theme: localStorage.getItem("theme") || ""
+  });
 
   const days = getDaysInMonth(year, month);
 
-  // Charger les repas planifiés du mois
-  useEffect(() => {
-    const fetchPlanning = async () => {
-      setLoading(true);
-      const start = new Date(year, month, 1).toISOString().slice(0, 10);
-      const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-      const { data } = await supabase
-        .from("repas_planifies")
-        .select("*")
-        .gte("date", start)
-        .lte("date", end);
-      const grouped = {};
-      data?.forEach(r => {
-        grouped[r.date] = grouped[r.date] || [];
-        grouped[r.date].push(r);
-      });
-      setPlanning(grouped);
-      setLoading(false);
-    };
-    fetchPlanning();
-  }, [year, month]);
+  // Récupère les repas planifiés du mois
+  const fetchPlanning = async () => {
+    setLoading(true);
+    const start = toYYYYMMDD(new Date(year, month, 1));
+    const end = toYYYYMMDD(new Date(year, month + 1, 0));
+    const { data } = await supabase
+      .from("repas_planifies")
+      .select("*")
+      .gte("date", start)
+      .lte("date", end);
+    const grouped = {};
+    data?.forEach(r => {
+      grouped[r.date] = grouped[r.date] || [];
+      grouped[r.date].push(r);
+    });
+    setPlanning(grouped);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchPlanning(); }, [year, month]);
 
   // Suggestions personnalisées (bons ressentis)
   useEffect(() => {
@@ -104,56 +109,6 @@ export default function Plan() {
     };
     fetchSuggestions();
   }, []);
-
-  // Comparaison repas respectés semaine actuelle/précédente
-  useEffect(() => {
-    const fetchComparaison = async () => {
-      const today = new Date();
-      const dayOfWeek = today.getDay() || 7;
-      const startThisWeek = new Date(today);
-      startThisWeek.setDate(today.getDate() - dayOfWeek + 1);
-      const endThisWeek = new Date(startThisWeek);
-      endThisWeek.setDate(startThisWeek.getDate() + 6);
-
-      const startLastWeek = new Date(startThisWeek);
-      startLastWeek.setDate(startThisWeek.getDate() - 7);
-      const endLastWeek = new Date(startThisWeek);
-      endLastWeek.setDate(startThisWeek.getDate() - 1);
-
-      const { data: planifiesThis } = await supabase
-        .from("repas_planifies")
-        .select("*")
-        .gte("date", startThisWeek.toISOString().slice(0, 10))
-        .lte("date", endThisWeek.toISOString().slice(0, 10));
-      const { data: reelsThis } = await supabase
-        .from("repas_reels")
-        .select("*")
-        .gte("date", startThisWeek.toISOString().slice(0, 10))
-        .lte("date", endThisWeek.toISOString().slice(0, 10));
-
-      const { data: planifiesLast } = await supabase
-        .from("repas_planifies")
-        .select("*")
-        .gte("date", startLastWeek.toISOString().slice(0, 10))
-        .lte("date", endLastWeek.toISOString().slice(0, 10));
-      const { data: reelsLast } = await supabase
-        .from("repas_reels")
-        .select("*")
-        .gte("date", startLastWeek.toISOString().slice(0, 10))
-        .lte("date", endLastWeek.toISOString().slice(0, 10));
-
-      const respectes = (planifies, reels) =>
-        planifies.filter(p =>
-          reels.some(r => r.date === p.date && r.type === p.type && r.aliment === p.aliment)
-        ).length;
-
-      setComparaison({
-        semaineActuelle: respectes(planifiesThis || [], reelsThis || []),
-        semainePrecedente: respectes(planifiesLast || [], reelsLast || [])
-      });
-    };
-    fetchComparaison();
-  }, [year, month, planning]);
 
   // Met à jour la catégorie et la règle quand on sélectionne un aliment
   useEffect(() => {
@@ -172,13 +127,7 @@ export default function Plan() {
     }
   }, [aliment]);
 
-  // Suggestions issues du référentiel pour le type de repas sélectionné
-  const suggestionsRef = referentielAliments.filter(a => a.typeRepas === type);
-
-  // Calcul du nombre de jours planifiés
-  const nbJoursPlanifies = days.filter(d => planning[d.toISOString().slice(0, 10)]?.length).length;
-
-  // Ajout manuel
+  // Ajouter un repas planifié
   const handleAdd = async () => {
     if (!aliment || !type || !selectedDate) return;
     setLoading(true);
@@ -188,45 +137,10 @@ export default function Plan() {
     setAliment("");
     setSelectedDate("");
     setLoading(false);
-    // Recharge le planning
-    const start = new Date(year, month, 1).toISOString().slice(0, 10);
-    const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-    const { data } = await supabase
-      .from("repas_planifies")
-      .select("*")
-      .gte("date", start)
-      .lte("date", end);
-    const grouped = {};
-    data?.forEach(r => {
-      grouped[r.date] = grouped[r.date] || [];
-      grouped[r.date].push(r);
-    });
-    setPlanning(grouped);
+    fetchPlanning();
   };
 
-  // Edition inline
-  const handleEdit = async (id) => {
-    if (!editAliment) return;
-    await supabase.from("repas_planifies").update({ aliment: editAliment }).eq("id", id);
-    setIsEditing(null);
-    setEditAliment("");
-    // Recharge le planning
-    const start = new Date(year, month, 1).toISOString().slice(0, 10);
-    const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-    const { data } = await supabase
-      .from("repas_planifies")
-      .select("*")
-      .gte("date", start)
-      .lte("date", end);
-    const grouped = {};
-    data?.forEach(r => {
-      grouped[r.date] = grouped[r.date] || [];
-      grouped[r.date].push(r);
-    });
-    setPlanning(grouped);
-  };
-
-  // Drag & drop
+  // Drag & drop (déplacement d'un repas d'une date à une autre)
   const onDragEnd = async (result) => {
     if (!result.destination) return;
     const { draggableId, source, destination } = result;
@@ -235,114 +149,172 @@ export default function Plan() {
       .from("repas_planifies")
       .update({ date: destination.droppableId })
       .eq("id", draggableId);
-    // Recharge le planning
-    const start = new Date(year, month, 1).toISOString().slice(0, 10);
-    const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-    const { data } = await supabase
-      .from("repas_planifies")
-      .select("*")
-      .gte("date", start)
-      .lte("date", end);
-    const grouped = {};
-    data?.forEach(r => {
-      grouped[r.date] = grouped[r.date] || [];
-      grouped[r.date].push(r);
-    });
-    setPlanning(grouped);
+    fetchPlanning();
   };
 
-  // Sauvegarde du mantra
-  const handleMantraChange = (e) => {
-    setMantra(e.target.value);
-    localStorage.setItem("mantra", e.target.value);
+  // Validation et sauvegarde des infos du mois
+  const handleValideInfos = () => {
+    localStorage.setItem("mantra", mantra);
+    localStorage.setItem("objectif", objectif);
+    localStorage.setItem("theme", theme);
+    setValideInfos({ mantra, objectif, theme });
   };
 
-  // Sauvegarde objectif poids
-  const handleObjectifPoidsChange = (e) => {
-    setObjectifPoids(e.target.value);
-    localStorage.setItem("objectifPoids", e.target.value);
-  };
+  const suggestionsRef = referentielAliments.filter(a => a.typeRepas === type);
+  const nbJoursPlanifies = days.filter(d => planning[toYYYYMMDD(d)]?.length).length;
 
-  // Import CSV
-  const handleImport = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    Papa.parse(file, {
-      header: true,
-      delimiter: ";",
-      complete: async (results) => {
-        for (const row of results.data) {
-          if (row.date && row.type && row.aliment) {
-            await supabase.from("repas_planifies").insert([
-              {
-                date: row.date,
-                type: row.type,
-                aliment: row.aliment,
-                categorie: row.categorie || null
-              }
-            ]);
-          }
-        }
-        // Recharge le planning après import
-        const start = new Date(year, month, 1).toISOString().slice(0, 10);
-        const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-        const { data } = await supabase
-          .from("repas_planifies")
-          .select("*")
-          .gte("date", start)
-          .lte("date", end);
-        const grouped = {};
-        data?.forEach(r => {
-          grouped[r.date] = grouped[r.date] || [];
-          grouped[r.date].push(r);
-        });
-        setPlanning(grouped);
-      }
-    });
-  };
-
-  // Générer modèle CSV mensuel pré-rempli
-  const handleDownloadModele = () => {
-    const header = "date;type;aliment\n";
-    let rows = "";
-    days.forEach(d => {
-      const dateStr = d.toISOString().slice(0, 10);
-      typesRepas.forEach(t => {
-        rows += `${dateStr};${t.nom};\n`;
+  // EXPORT MODELE (CSV/XLSX) avec toutes colonnes utiles
+  const handleExport = (format = "csv") => {
+    const rows = [
+      ["Date", "Jour", "Type", "Aliment", "Catégorie"]
+    ];
+    days.forEach(dateObj => {
+      const dateJJMMAAAA = dateObj.toLocaleDateString("fr-FR");
+      const jourSemaine = getDayOfWeek(dateObj);
+      typesRepas.forEach(typeR => {
+        rows.push([
+          dateJJMMAAAA,
+          jourSemaine,
+          typeR.nom,
+          "",
+          ""
+        ]);
       });
     });
-    // Ajoute le BOM pour les accents et le bon séparateur
-    const blob = new Blob(
-      ["\uFEFF" + header + rows],
-      { type: "text/csv;charset=utf-8;" }
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `planning-${moisNoms[month]}-${year}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (format === "csv") {
+      const csv = Papa.unparse(rows, { delimiter: ";" });
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `planning-modele-${moisNoms[month]}-${year}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === "xlsx") {
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Planning");
+      XLSX.writeFile(wb, `planning-modele-${moisNoms[month]}-${year}.xlsx`);
+    }
+  };
+
+  // IMPORT CSV/XLSX, recharge le planning
+  const handleImportFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoading(true); setImportFeedback("");
+    let repas = [];
+    try {
+      if (file.name.endsWith(".csv")) {
+        const text = await file.text();
+        const possibleSeparators = [",", ";", "\t"];
+        let best = { data: [], count: 0 };
+        for (const sep of possibleSeparators) {
+          const res = Papa.parse(text, { delimiter: sep, header: true, skipEmptyLines: true });
+          if (res.data.length > best.count) best = { data: res.data, count: res.data.length };
+        }
+        repas = best.data.map(r => {
+          let d = r.Date || r["date"];
+          if (d && typeof d === "string" && d.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+            const [jour, mois, annee] = d.split("/");
+            d = `${annee}-${mois.padStart(2, "0")}-${jour.padStart(2, "0")}`;
+          } else if (d && typeof d === "string" && d.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            // ok
+          } else {
+            d = null;
+          }
+          return {
+            date: d,
+            type: r.Type || r["type"] || "",
+            aliment: r.Aliment || r["aliment"] || "",
+            categorie: r.Catégorie || r["Categorie"] || r["categorie"] || ""
+          };
+        }).filter(r => !!r.date && !!r.type && !!r.aliment);
+      } else if (file.name.endsWith(".xlsx") || file.name.endsWith(".xls")) {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data);
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        repas = json.map(r => {
+          let d = r.Date || r["date"];
+          if (d && typeof d === "string" && d.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+            const [jour, mois, annee] = d.split("/");
+            d = `${annee}-${mois.padStart(2, "0")}-${jour.padStart(2, "0")}`;
+          } else if (d && typeof d === "string" && d.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            // ok
+          } else {
+            d = null;
+          }
+          return {
+            date: d,
+            type: r.Type || r["type"] || "",
+            aliment: r.Aliment || r["aliment"] || "",
+            categorie: r.Catégorie || r["Categorie"] || r["categorie"] || ""
+          };
+        }).filter(r => !!r.date && !!r.type && !!r.aliment);
+      } else {
+        setImportFeedback("Format de fichier non supporté. Import CSV ou XLSX seulement.");
+        setLoading(false); return;
+      }
+      if (repas.length === 0) {
+        setImportFeedback("Aucun repas valide trouvé dans le fichier. Vérifie séparateur/format ou télécharge le modèle.");
+        setLoading(false); return;
+      }
+      await supabase.from("repas_planifies").insert(repas);
+      setImportFeedback("Importation terminée !");
+      fetchPlanning(); // recharge le planning
+    } catch (err) {
+      setImportFeedback("Erreur lors de l'import : " + err.message);
+    }
+    setLoading(false);
   };
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: 24 }}>
-      <button
-        onClick={() => router.back()}
+      {/* 1. Bouton retour */}
+      <button 
+        onClick={() => window.history.back()}
         style={{
           marginBottom: 16,
           background: "#e3f2fd",
-          color: "#1976d2",
           border: "none",
           borderRadius: 8,
-          padding: "8px 18px",
+          padding: "8px 16px",
           fontWeight: 600,
-          fontSize: 15,
+          fontSize: 16,
           cursor: "pointer"
         }}
       >
         ⬅️ Retour
       </button>
+
+      {/* 2. Titre */}
       <h1 style={{ textAlign: "center", marginBottom: 8 }}>🌟 Planning alimentaire du mois</h1>
+
+      {/* 3. Import/export */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, marginBottom: 16 }}>
+        <input
+          type="file"
+          accept=".csv, .xlsx, .xls"
+          onChange={handleImportFile}
+          style={{ marginRight: 8 }}
+        />
+        <button
+          onClick={() => handleExport("xlsx")}
+          style={{ background: "#90caf9", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 600, marginRight: 8 }}
+        >Valider (télécharger le modèle Excel)</button>
+        <button
+          onClick={() => handleExport("csv")}
+          style={{ background: "#b3e5fc", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 600 }}
+        >Valider (télécharger le modèle CSV)</button>
+        {importFeedback && (
+          <span style={{ marginLeft: 16, color: importFeedback.includes("terminée") ? "green" : "red", fontWeight: 600 }}>
+            {importFeedback}
+          </span>
+        )}
+      </div>
+
+      {/* 4. Motivation du mois */}
       <div style={{
         margin: "16px 0 24px 0",
         textAlign: "center",
@@ -352,37 +324,72 @@ export default function Plan() {
         fontWeight: 500,
         fontSize: 18
       }}>
-        <span>🎯 <b>Ton mantra du mois :</b></span>
+        <span>🎯 <b>Mantra :</b></span>
         <input
           value={mantra}
-          onChange={handleMantraChange}
+          onChange={e => setMantra(e.target.value)}
           placeholder="Ex : Je prends soin de moi chaque jour !"
           style={{
-            marginLeft: 12,
+            marginLeft: 8,
             padding: 8,
             borderRadius: 8,
             border: "1px solid #90caf9",
-            width: 350,
+            width: 220,
             fontSize: 16
           }}
         />
-      </div>
-      <div style={{ textAlign: "center", marginBottom: 16 }}>
-        <span>🎯 <b>Objectif perte de poids du mois :</b></span>
+        <span style={{ marginLeft: 12 }}>🏆 <b>Objectif :</b></span>
         <input
-          value={objectifPoids}
-          onChange={handleObjectifPoidsChange}
-          placeholder="Ex : -2 kg"
+          value={objectif}
+          onChange={e => setObjectif(e.target.value)}
+          placeholder="Ex : Atteindre 70kg"
           style={{
-            marginLeft: 12,
+            marginLeft: 8,
             padding: 8,
             borderRadius: 8,
             border: "1px solid #90caf9",
-            width: 120,
+            width: 160,
             fontSize: 16
           }}
         />
+        <span style={{ marginLeft: 12 }}>🍏 <b>Thème :</b></span>
+        <input
+          value={theme}
+          onChange={e => setTheme(e.target.value)}
+          placeholder="Ex : Méditerranéen"
+          style={{
+            marginLeft: 8,
+            padding: 8,
+            borderRadius: 8,
+            border: "1px solid #90caf9",
+            width: 160,
+            fontSize: 16
+          }}
+        />
+        <button
+          onClick={handleValideInfos}
+          style={{
+            marginLeft: 16,
+            background: "#90caf9",
+            border: "none",
+            borderRadius: 8,
+            padding: "8px 16px",
+            fontWeight: 600,
+            fontSize: 16,
+            cursor: "pointer"
+          }}
+        >
+          Valider
+        </button>
+        {/* Affichage infos validées */}
+        <div style={{ marginTop: 12, fontSize: 16, color: "#1976d2" }}>
+          <b>Mantra :</b> {valideInfos.mantra} &nbsp; | &nbsp;
+          <b>Objectif :</b> {valideInfos.objectif} &nbsp; | &nbsp;
+          <b>Thème :</b> {valideInfos.theme}
+        </div>
       </div>
+
+      {/* 5. Navigation mois */}
       <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 16 }}>
         <button onClick={() => setMonth(m => m === 0 ? 11 : m - 1)}>⬅️ Mois précédent</button>
         <span style={{ fontWeight: 600, fontSize: 18 }}>
@@ -390,29 +397,8 @@ export default function Plan() {
         </span>
         <button onClick={() => setMonth(m => m === 11 ? 0 : m + 1)}>Mois suivant ➡️</button>
       </div>
-      <div style={{ textAlign: "center", marginBottom: 16 }}>
-        <button onClick={handleDownloadModele}
-          style={{
-            background: "#90caf9",
-            color: "#1976d2",
-            border: "none",
-            borderRadius: 8,
-            padding: "8px 20px",
-            fontWeight: 600,
-            fontSize: 15,
-            cursor: "pointer",
-            marginRight: 12
-          }}>
-          📥 Télécharger le modèle mensuel à remplir (Excel)
-        </button>
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleImport}
-          style={{ marginLeft: 8 }}
-        />
-        <span style={{ marginLeft: 16, color: "#888" }}>ou importe ton planning Excel</span>
-      </div>
+
+      {/* 6. Ajout repas planifié */}
       <div style={{
         marginBottom: 24,
         textAlign: "center",
@@ -462,6 +448,8 @@ export default function Plan() {
           </button>
         ))}
       </div>
+
+      {/* 7. Règle nutritionnelle */}
       {regle && (
         <div style={{
           background: "#fffde7",
@@ -477,6 +465,8 @@ export default function Plan() {
           <span>📋 <b>Règle à respecter pour ce choix :</b> {regle}</span>
         </div>
       )}
+
+      {/* 8. Progression mois */}
       <div style={{ marginBottom: 16, textAlign: "center" }}>
         <span style={{
           background: "#f8bbd0",
@@ -492,21 +482,8 @@ export default function Plan() {
         <span>📊 Repas respectés cette semaine : {comparaison.semaineActuelle} <br />
           Semaine dernière : {comparaison.semainePrecedente}</span>
       </div>
-      {!loading && nbJoursPlanifies < days.length && (
-        <div style={{
-          background: "#ffebee",
-          color: "#c62828",
-          border: "1px solid #ffcdd2",
-          borderRadius: 8,
-          padding: 12,
-          marginBottom: 16,
-          fontWeight: 600,
-          textAlign: "center"
-        }}>
-          ⚠️ Il manque des repas planifiés pour certains jours du mois.<br />
-          Plus tu planifies, plus tu progresses vers tes objectifs !
-        </div>
-      )}
+
+      {/* 9. Calendrier */}
       <DragDropContext onDragEnd={onDragEnd}>
         <div style={{ overflowX: "auto" }}>
           <table style={{
@@ -534,10 +511,10 @@ export default function Plan() {
               {[0, 1, 2, 3, 4, 5].map(week => (
                 <tr key={week}>
                   {joursSemaine.map((_, dayIdx) => {
-                    const firstDay = new Date(year, month, 1).getDay() || 7;
-                    const dayNum = week * 7 + dayIdx + 1 - (firstDay - 1);
+                    const firstDay = new Date(year, month, 1).getDay();
+                    const dayNum = week * 7 + dayIdx + 1 - (firstDay === 0 ? 6 : firstDay - 1);
                     const dateObj = new Date(year, month, dayNum);
-                    const dateStr = dateObj.toISOString().slice(0, 10);
+                    const dateStr = toYYYYMMDD(dateObj);
                     const isCurrentMonth = dateObj.getMonth() === month && dayNum > 0 && dayNum <= days.length;
                     return (
                       <td
@@ -553,7 +530,9 @@ export default function Plan() {
                       >
                         {isCurrentMonth && (
                           <>
-                            <div style={{ fontWeight: 600, marginBottom: 4 }}>{dateObj.getDate()}</div>
+                            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                              {dateObj.getDate()} <span style={{ fontSize: 12, color: "#888" }}>({getDayOfWeek(dateObj)})</span>
+                            </div>
                             <Droppable droppableId={dateStr}>
                               {(provided) => (
                                 <div ref={provided.innerRef} {...provided.droppableProps}>
@@ -581,64 +560,25 @@ export default function Plan() {
                                             }}
                                           >
                                             <span style={{ fontSize: 18 }}>{repasType?.emoji}</span>
-                                            {isEditing === r.id ? (
-                                              <>
-                                                <input
-                                                  value={editAliment}
-                                                  onChange={e => setEditAliment(e.target.value)}
-                                                  style={{ marginRight: 4, minWidth: 80 }}
-                                                />
-                                                <button
-                                                  onClick={() => handleEdit(r.id)}
-                                                  style={{ color: "#388e3c", marginRight: 4 }}
-                                                  title="Valider"
-                                                >✔️</button>
-                                                <button onClick={() => setIsEditing(null)} style={{ color: "#c62828" }}>✖️</button>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <b>{r.type}</b> : {r.aliment}
-                                                <button
-                                                  onClick={() => {
-                                                    setIsEditing(r.id);
-                                                    setEditAliment(r.aliment);
-                                                  }}
-                                                  style={{ background: "none", border: "none", color: "#1976d2", marginLeft: 4 }}
-                                                  title="Modifier ce repas"
-                                                >✏️</button>
-                                                <button
-                                                  onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    await supabase.from("repas_planifies").delete().eq("id", r.id);
-                                                    // Recharge le planning après suppression
-                                                    const start = new Date(year, month, 1).toISOString().slice(0, 10);
-                                                    const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-                                                    const { data } = await supabase
-                                                      .from("repas_planifies")
-                                                      .select("*")
-                                                      .gte("date", start)
-                                                      .lte("date", end);
-                                                    const grouped = {};
-                                                    data?.forEach(r => {
-                                                      grouped[r.date] = grouped[r.date] || [];
-                                                      grouped[r.date].push(r);
-                                                    });
-                                                    setPlanning(grouped);
-                                                  }}
-                                                  style={{
-                                                    background: "none",
-                                                    border: "none",
-                                                    color: "#c62828",
-                                                    cursor: "pointer",
-                                                    fontSize: 18,
-                                                    marginLeft: 4
-                                                  }}
-                                                  title="Supprimer ce repas"
-                                                >
-                                                  🗑️
-                                                </button>
-                                              </>
-                                            )}
+                                            <b>{r.type}</b> : {r.aliment}
+                                            <button
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                await supabase.from("repas_planifies").delete().eq("id", r.id);
+                                                fetchPlanning();
+                                              }}
+                                              style={{
+                                                background: "none",
+                                                border: "none",
+                                                color: "#c62828",
+                                                cursor: "pointer",
+                                                fontSize: 18,
+                                                marginLeft: 4
+                                              }}
+                                              title="Supprimer ce repas"
+                                            >
+                                              🗑️
+                                            </button>
                                           </div>
                                         )}
                                       </Draggable>
@@ -659,45 +599,27 @@ export default function Plan() {
           </table>
         </div>
       </DragDropContext>
-      <div style={{
-        marginTop: 32,
-        textAlign: "center",
-        color: nbJoursPlanifies === days.length ? "#388e3c" : "#1976d2",
-        fontWeight: 700,
-        fontSize: 18
-      }}>
-        {nbJoursPlanifies === days.length ? (
-          <div style={{
-            background: "#c8e6c9",
-            color: "#388e3c",
-            borderRadius: 12,
-            padding: 16,
-            fontWeight: 700,
-            fontSize: 22,
-            animation: "pop 0.7s"
-          }}>
-            🏅 <b>Bravo !</b> Tu as planifié tous tes repas du mois !
-          </div>
-        ) : (
-          "💡 Astuce : Plus tu planifies, plus tu progresses vers tes objectifs !"
-        )}
-      </div>
-      <div style={{
-        marginTop: 32,
-        textAlign: "center",
-        fontSize: 16,
-        color: "#888"
-      }}>
-        <span>👑 <b>Le coach du mois :</b> "N’oublie pas, chaque petit pas compte ! Tu es sur la bonne voie."</span>
-      </div>
+
+      {/* 10. Export planning rempli */}
       <button
         onClick={() => {
-          const csv = Object.entries(planning)
-            .flatMap(([date, repas]) =>
-              repas.map(r => `${date};${r.type};${r.aliment}`)
-            )
-            .join("\n");
-          const blob = new Blob(["\uFEFFDate;Type;Aliment\n" + csv], { type: "text/csv;charset=utf-8;" });
+          const rows = [["Date", "Jour", "Type", "Aliment", "Catégorie"]];
+          Object.entries(planning).forEach(([date, repasArray]) => {
+            const dObj = new Date(date);
+            const jour = getDayOfWeek(dObj);
+            const dateJJMMAAAA = dObj.toLocaleDateString("fr-FR");
+            repasArray.forEach(r => {
+              rows.push([
+                dateJJMMAAAA,
+                jour,
+                r.type,
+                r.aliment,
+                r.categorie || ""
+              ]);
+            });
+          });
+          const csv = Papa.unparse(rows, { delimiter: ";" });
+          const blob = new Blob([csv], { type: "text/csv" });
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
@@ -718,8 +640,20 @@ export default function Plan() {
           cursor: "pointer"
         }}
       >
-        📤 Exporter mon planning (.csv)
+        📤 Exporter mon planning rempli (.csv)
       </button>
+
+      {/* 11. Coach du mois */}
+      <div style={{
+        marginTop: 32,
+        textAlign: "center",
+        fontSize: 16,
+        color: "#888"
+      }}>
+        <span>👑 <b>Le coach du mois :</b> "N’oublie pas, chaque petit pas compte ! Tu es sur la bonne voie."</span>
+      </div>
+
+      {/* 12. Responsive style */}
       <style jsx global>{`
         @media (max-width: 600px) {
           input, select, button {
