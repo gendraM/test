@@ -1,9 +1,9 @@
 import RepasBloc from "../components/RepasBloc";
 import { supabase } from '../lib/supabaseClient';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
-// Utilitaire message cyclique (inchangé)
+// Utilitaire message cyclique
 function pickMessage(array, key) {
   if (!array || array.length === 0) return "";
   let idx = 0;
@@ -15,7 +15,7 @@ function pickMessage(array, key) {
   return msg;
 }
 
-// Utilitaires de date (inchangé)
+// Utilitaires de date
 function isInLast7Days(dateString, refDateString) {
   const now = new Date(refDateString);
   const sevenDaysAgo = new Date(now);
@@ -24,7 +24,6 @@ function isInLast7Days(dateString, refDateString) {
   return target >= sevenDaysAgo && target <= now;
 }
 
-// Snackbar (inchangé)
 function Snackbar({ open, message, type = "info", onClose }) {
   if (!open) return null;
   return (
@@ -78,9 +77,7 @@ const repasIcons = {
   "Autre": "🍴",
 };
 
-// --------------------
 // BADGES / PROGRESSION (Zone 2 - affiché uniquement palier===1)
-// --------------------
 const PROGRESSION_MILESTONES = [
   { streak: 12, message: "3 mois sans dépasser 1 extra/semaine : Ta gestion des extras est exemplaire. C’est un nouveau mode de vie que tu installes, bravo ! Ne relâche pas tes efforts : évite la zone de satisfaction et continue à prendre soin de tes habitudes !" },
   { streak: 8, message: "8 semaines de maîtrise des extras ! Tu prouves que tu peux tenir sur la durée. C’est la marque des personnes déterminées : tu peux être fier(e) de toi." },
@@ -91,7 +88,6 @@ const PROGRESSION_MILESTONES = [
 const INTERRUPTION_VERBATIM = "Pas grave, chaque semaine est une nouvelle chance ! Tu as dépassé ton quota d’extras cette fois-ci, mais ce n’est qu’une étape. Reprends ta série, tu sais que tu peux y arriver !";
 const REGULAR_MOTIVATION = "Limiter ses extras, c’est se rapprocher de ses objectifs semaine après semaine. Garde le rythme !";
 
-// Renvoie l'historique extras par semaine (16 dernières, semaine en cours d'abord)
 function getWeeklyExtrasHistory(repasSemaine, selectedDate, nbWeeks = 16) {
   let today = new Date(selectedDate);
   let weeks = [];
@@ -123,7 +119,6 @@ function getWeeklyExtrasHistory(repasSemaine, selectedDate, nbWeeks = 16) {
   return weeks;
 }
 
-// Palier dynamique (descend d’un max/semaine, jamais de régression, jamais <1)
 function getWeeklyPalier(history) {
   let palier = 7;
   for (let i = history.length - 1; i >= 0; i--) {
@@ -136,12 +131,10 @@ function getWeeklyPalier(history) {
   return palier;
 }
 
-// Logique progression/badge - NE PAS déclencher si palier > 1
 function getProgressionMessage(history, palier) {
   if (palier > 1) {
     return { badgeMessage: null, milestone: null, interruption: false, nextMilestone: null, weeksToNext: 0, streak: 0, allMilestones: [] };
   }
-  // Palier == objectif final : On peut compter la série
   let streak = 0, maxStreak = 0, interruption = false, milestone = 0;
   let lastWasStreak = false;
   let milestonesUnlocked = [];
@@ -207,9 +200,7 @@ function ProgressionHistory({ history }) {
   );
 }
 
-// --------------------
 // ZONE 1 : Feedback immédiat (toujours affiché)
-// --------------------
 function ZoneFeedbackHebdo({
   extrasThisWeek,
   extrasLastWeek,
@@ -227,7 +218,6 @@ function ZoneFeedbackHebdo({
     color = "#f57c00";
   }
 
-  // Correction : n'afficher la ligne "Semaine dernière" QUE si variation < 0 et historique non vide
   const showLastWeek =
     typeof extrasLastWeek === "number" &&
     extrasLastWeek > 0 &&
@@ -273,12 +263,9 @@ function ZoneFeedbackHebdo({
   );
 }
 
-// --------------------
 // ZONE 2 : Progression / badges (affiché SEULEMENT si palier===1)
-// --------------------
 function ZoneBadgesProgression({ progression, history, palier }) {
   if (palier > 1) {
-    // Ne rien afficher, ou éventuellement un message neutre
     return null;
   }
   let content;
@@ -314,9 +301,7 @@ function ZoneBadgesProgression({ progression, history, palier }) {
   );
 }
 
-// --------------------
 // MAIN COMPONENT
-// --------------------
 export default function Suivi() {
   const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const repasParam = params?.get('repas');
@@ -338,6 +323,11 @@ export default function Suivi() {
   const [snackbar, setSnackbar] = useState({ open: false, message: "", type: "info" });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
 
+  // Ajout pour objectif calorique dynamique
+  const [objectifCalorique, setObjectifCalorique] = useState(null);
+  const [scoreCalorique, setScoreCalorique] = useState(0);
+  const [caloriesDuJour, setCaloriesDuJour] = useState(0);
+
   // Pour feedback extra
   const [showInfo, setShowInfo] = useState(false);
 
@@ -358,6 +348,28 @@ export default function Suivi() {
   const [enReequilibrage, setEnReequilibrage] = useState(false);
   const [repasPlanifie, setRepasPlanifie] = useState(null);
 
+  // Avertissement dépassement calorique
+  const [showAlerteCalorique, setShowAlerteCalorique] = useState(false);
+
+  // Ajout : Pour synchroniser le calcul des scores quand objectifCalorique et repasSemaine sont prêts
+  const repasReady = useRef(false);
+
+  // Récupérer l'objectif calorique "objectif" (besoin_objectif) du dernier profil
+  useEffect(() => {
+    const fetchProfil = async () => {
+      // On cherche bien le besoin_objectif (objectif calorique perte de poids)
+      const { data, error } = await supabase
+        .from('profil')
+        .select('besoin_objectif')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!error && data && data.length > 0) {
+        setObjectifCalorique(data[0].besoin_objectif);
+      }
+    };
+    fetchProfil();
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     const fetchData = async () => {
@@ -365,6 +377,7 @@ export default function Suivi() {
       const semaine = await fetchRepasSemaine();
       setRepasPlan(plan);
       setRepasSemaine(semaine);
+      repasReady.current = true; // flag ready pour synchro calcul
 
       // Historique
       const weekly = getWeeklyExtrasHistory(semaine, selectedDate, 16);
@@ -402,12 +415,23 @@ export default function Suivi() {
 
       setExtrasRestants(Math.max(0, palier - extrasTotal.length));
 
-      calculerScores(semaine);
       setLoading(false);
     };
     fetchData();
     // eslint-disable-next-line
-  }, [selectedDate]);
+  }, [selectedDate, objectifCalorique]);
+
+  // Synchronisation stricte du calcul calorique dès que données prêtes
+  useEffect(() => {
+    if (
+      objectifCalorique !== null &&
+      objectifCalorique !== undefined &&
+      repasReady.current
+    ) {
+      calculerScores(repasSemaine);
+    }
+    // eslint-disable-next-line
+  }, [objectifCalorique, repasSemaine, selectedDate]);
 
   useEffect(() => {
     const fetchRepasPlanifie = async () => {
@@ -454,6 +478,21 @@ export default function Suivi() {
 
   const calculerScores = (repasSemaine) => {
     const repasDuJour = repasSemaine.filter((repas) => repas.date === selectedDate);
+
+    // NOUVEAU SCORE CALORIQUE
+    const totalCalories = repasDuJour.reduce((acc, r) => acc + (r.kcal || r.calories || 0), 0);
+    setCaloriesDuJour(totalCalories);
+
+    if (objectifCalorique > 0) {
+      setScoreCalorique(Math.round((totalCalories / objectifCalorique) * 100));
+    } else {
+      setScoreCalorique(0);
+    }
+
+    // Affiche l'alerte si dépassement calorique
+    setShowAlerteCalorique(objectifCalorique > 0 && totalCalories > objectifCalorique);
+
+    // Score discipline (ancien)
     const repasAlignes = repasDuJour.filter((repas) => repas.regle_respectee).length;
     const totalRepas = repasDuJour.length;
     setScoreJournalier(Math.round((repasAlignes / (totalRepas || 1)) * 100));
@@ -467,10 +506,9 @@ export default function Suivi() {
       setSnackbar({ open: true, message: "Erreur lors de l'enregistrement du repas.", type: "error" });
     } else {
       setSnackbar({ open: true, message: "Repas enregistré avec succès !", type: "success" });
-      setLoading(true);
+      // La liste locale est rafraîchie dans RepasBloc, ici on rafraîchit la semaine pour scores
       const updatedRepasSemaine = await fetchRepasSemaine();
       setRepasSemaine(updatedRepasSemaine);
-      setLoading(false);
     }
   };
 
@@ -498,6 +536,42 @@ export default function Suivi() {
       }}>
         🥗 Suivi alimentaire du jour
       </h1>
+
+      {/* ----------- INFOS CALORIQUES JOURNALIÈRES ----------- */}
+      <div style={{
+        marginBottom: 16,
+        background: "#fff",
+        borderRadius: 12,
+        padding: "18px 18px 10px 18px",
+        boxShadow: "0 1px 5px rgba(0,0,0,0.06)",
+        borderLeft: "6px solid #ff9800",
+        textAlign: "center"
+      }}>
+        <div>
+          <span style={{ fontWeight: 600, color: "#888" }}>Objectif calorique du jour : </span>
+          <span style={{ fontWeight: 700, color: "#ff9800", fontSize: 18 }}>
+            {(objectifCalorique !== null && objectifCalorique !== undefined) ? `${objectifCalorique} kcal` : "…"}
+          </span>
+        </div>
+        <div>
+          <span style={{ fontWeight: 600, color: "#888" }}>Consommé aujourd’hui : </span>
+          <span style={{ fontWeight: 700, color: "#1976d2", fontSize: 18 }}>
+            {caloriesDuJour} kcal
+          </span>
+        </div>
+        <div>
+          <span style={{ fontWeight: 600, color: "#888" }}>Reste à consommer : </span>
+          <span style={{
+            fontWeight: 700,
+            color: caloriesDuJour > objectifCalorique ? "#e53935" : "#43a047",
+            fontSize: 18
+          }}>
+            {(objectifCalorique !== null && objectifCalorique !== undefined && caloriesDuJour !== null)
+              ? (objectifCalorique - caloriesDuJour) + " kcal"
+              : "..."}
+          </span>
+        </div>
+      </div>
 
       {/* --------- ZONE 1 : Feedback immédiat --------- */}
       <ZoneFeedbackHebdo
@@ -632,6 +706,7 @@ export default function Suivi() {
               extrasRestants={extrasRestants}
               onSave={handleSaveRepas}
               setSnackbar={setSnackbar}
+              repasSemaine={repasSemaine}
             />
             <div style={{ textAlign: 'center', marginTop: 16 }}>
               <button
@@ -655,6 +730,7 @@ export default function Suivi() {
         )
       )}
 
+      {/* ----------- SCORE CALORIQUE ET DISCIPLINE ----------- */}
       <div style={{
         marginTop: 24,
         background: "#fafafa",
@@ -664,16 +740,54 @@ export default function Suivi() {
       }}>
         <h2 style={{ margin: "0 0 16px 0" }}>Mes scores</h2>
         <div style={{ marginBottom: 12 }}>
-          <span style={{ fontWeight: 500 }}>Score journalier : </span>
+          <span style={{ fontWeight: 500 }}>Score calorique du jour : </span>
+          <span style={{ fontWeight: 700, color: "#ff9800", fontSize: 18 }}>
+            {scoreCalorique}%
+          </span>
+          <div>
+            <span style={{ fontSize: 14, color: "#888" }}>
+              Objectif : {(objectifCalorique !== null && objectifCalorique !== undefined) ? `${objectifCalorique} kcal` : "…"} — Consommé : {caloriesDuJour} kcal
+            </span>
+          </div>
+          <div>
+            <span style={{ fontSize: 14, color: "#888" }}>
+              Calories restantes : {(objectifCalorique !== null && objectifCalorique !== undefined && caloriesDuJour !== null)
+                ? (objectifCalorique - caloriesDuJour) + " kcal"
+                : "..."}
+            </span>
+          </div>
+          <ProgressBar value={scoreCalorique} color="#ff9800" />
+        </div>
+        <div>
+          <span style={{ fontWeight: 500 }}>Score discipline (repas alignés) : </span>
           <span style={{ fontWeight: 700, color: "#1976d2", fontSize: 18 }}>{scoreJournalier}%</span>
           <ProgressBar value={scoreJournalier} color="#1976d2" />
         </div>
-        <div>
+        <div style={{ marginTop: 8 }}>
           <span style={{ fontWeight: 500 }}>Score hebdomadaire : </span>
           <span style={{ fontWeight: 700, color: "#43a047", fontSize: 18 }}>{scoreHebdomadaire}%</span>
           <ProgressBar value={scoreHebdomadaire} color="#43a047" />
         </div>
       </div>
+
+      {/* ----------- AVERTISSEMENT DÉPASSEMENT CALORIQUE ----------- */}
+      {showAlerteCalorique && (
+        <div style={{
+          marginTop: 24,
+          background: "#fffbe6",
+          border: "1px solid #ffe082",
+          borderRadius: 12,
+          padding: 20,
+          color: "#b26a00",
+          boxShadow: "0 1px 6px #ffd60022"
+        }}>
+          <b>⚠️ Attention : tu dépasses ton objectif calorique !</b>
+          <div style={{marginTop:8}}>
+            Si tu continues ainsi, tu risques de t’éloigner de ton objectif et de prendre du poids.<br />
+            Adapte tes repas pour revenir dans ta zone d’objectif.
+          </div>
+        </div>
+      )}
 
       {/* Hors quota – affichage léger */}
       {extrasHorsQuota.length > 0 && (
@@ -745,17 +859,3 @@ export default function Suivi() {
     </div>
   );
 }
-
-/* 
-Documentation : 
-- ZoneFeedbackHebdo : feedback immédiat chaque semaine (jamais fusionné avec progression).
-- ZoneBadgesProgression : progression/badges affiché UNIQUEMENT si palier dynamique === 1, cf. cahier des charges.
-- La logique d’affichage des messages de progression :
-  1. Si le palier > 1 : RIEN n’est affiché pour la progression/badge.
-  2. Si palier === 1 :
-     - Si la semaine courante franchit un jalon (1,2,4,8,12 semaines consécutives à 1 extra ou moins), on affiche le message de badge.
-     - Si la série est interrompue, on affiche le message d’interruption à la reprise.
-     - Sinon, on affiche le message motivation régulière ou “Encore X semaines” pour le prochain badge.
-- Le calcul du palier ne descend jamais de plus d’un à la fois, et ne régresse jamais.
-- L’historique reste accessible dans la zone progression.
-*/

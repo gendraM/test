@@ -12,6 +12,7 @@ const typesRepas = [
   { nom: "Collation", emoji: "🍏", color: "#f8bbd0" }
 ];
 
+// On commence par Dimanche pour que la 0e colonne soit toujours Dimanche
 const joursSemaine = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 const moisNoms = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -33,10 +34,6 @@ function getDaysInMonth(year, month) {
     days.push(new Date(year, month, i));
   }
   return days;
-}
-function getDayOfWeek(date) {
-  const map = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
-  return map[date.getDay()];
 }
 function toYYYYMMDD(date) {
   const d = date.getDate().toString().padStart(2, "0");
@@ -170,7 +167,7 @@ export default function Plan() {
     ];
     days.forEach(dateObj => {
       const dateJJMMAAAA = dateObj.toLocaleDateString("fr-FR");
-      const jourSemaine = getDayOfWeek(dateObj);
+      const jourSemaine = joursSemaine[dateObj.getDay()];
       typesRepas.forEach(typeR => {
         rows.push([
           dateJJMMAAAA,
@@ -268,6 +265,13 @@ export default function Plan() {
     }
     setLoading(false);
   };
+
+  // ----------- CALENDRIER -----------
+  // Calcul du premier jour du mois (0 = dimanche)
+  const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 = Dim, 1 = Lun, ..., 6 = Sam
+  // Nombre de semaines à afficher (6 lignes max)
+  const nbCells = firstDayOfMonth + days.length;
+  const nbWeeks = Math.ceil(nbCells / 7);
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: 24 }}>
@@ -483,7 +487,7 @@ export default function Plan() {
           Semaine dernière : {comparaison.semainePrecedente}</span>
       </div>
 
-      {/* 9. Calendrier */}
+      {/* 9. Calendrier corrigé */}
       <DragDropContext onDragEnd={onDragEnd}>
         <div style={{ overflowX: "auto" }}>
           <table style={{
@@ -508,14 +512,14 @@ export default function Plan() {
               </tr>
             </thead>
             <tbody>
-              {[0, 1, 2, 3, 4, 5].map(week => (
+              {[...Array(nbWeeks)].map((_, week) => (
                 <tr key={week}>
                   {joursSemaine.map((_, dayIdx) => {
-                    const firstDay = new Date(year, month, 1).getDay();
-                    const dayNum = week * 7 + dayIdx + 1 - (firstDay === 0 ? 6 : firstDay - 1);
-                    const dateObj = new Date(year, month, dayNum);
+                    // Calcul du numéro du jour du mois (1-based)
+                    const dayOfMonth = week * 7 + dayIdx - firstDayOfMonth + 1;
+                    const dateObj = new Date(year, month, dayOfMonth);
                     const dateStr = toYYYYMMDD(dateObj);
-                    const isCurrentMonth = dateObj.getMonth() === month && dayNum > 0 && dayNum <= days.length;
+                    const isCurrentMonth = dayOfMonth > 0 && dayOfMonth <= days.length;
                     return (
                       <td
                         key={dayIdx}
@@ -531,7 +535,7 @@ export default function Plan() {
                         {isCurrentMonth && (
                           <>
                             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                              {dateObj.getDate()} <span style={{ fontSize: 12, color: "#888" }}>({getDayOfWeek(dateObj)})</span>
+                              {dateObj.getDate()} <span style={{ fontSize: 12, color: "#888" }}>({joursSemaine[dayIdx]})</span>
                             </div>
                             <Droppable droppableId={dateStr}>
                               {(provided) => (
@@ -606,7 +610,7 @@ export default function Plan() {
           const rows = [["Date", "Jour", "Type", "Aliment", "Catégorie"]];
           Object.entries(planning).forEach(([date, repasArray]) => {
             const dObj = new Date(date);
-            const jour = getDayOfWeek(dObj);
+            const jour = joursSemaine[dObj.getDay()];
             const dateJJMMAAAA = dObj.toLocaleDateString("fr-FR");
             repasArray.forEach(r => {
               rows.push([

@@ -34,7 +34,6 @@ export default function ProfilPage() {
       .select('*')
       .order('created_at', { ascending: false })
       .limit(1)
-    console.log('fetchDernierProfil data:', data, 'error:', error) // 
     if (!error && data && data.length > 0) {
       setDernierProfil(data[0])
       if (!editMode) {
@@ -114,7 +113,7 @@ export default function ProfilPage() {
     fetchDernierProfil()
   }, [message, editMode])
 
-  // Gestion de l'enregistrement ou modification du profil
+  // Gestion de l'enregistrement ou modification du profil — MAJ intégrée ici !
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -122,6 +121,7 @@ export default function ProfilPage() {
     const t = parseFloat(taille)
     const a = parseFloat(age)
     const obj = parseFloat(objectif)
+    const d = delai
 
     if (isNaN(poids) || isNaN(t) || isNaN(a) || isNaN(obj) || !pourquoi || !delai) {
       setMessage("Merci de remplir tous les champs correctement.")
@@ -131,6 +131,15 @@ export default function ProfilPage() {
     // Calcul besoin calorique entretien pour femme
     const mb = Math.round(10 * poids + 6.25 * t - 5 * a - 161)
     const besoinCalorique = Math.round(mb * 1.5)
+
+    // Calcul objectif calorique perte de poids (c'est la valeur affichée "vise 1880 kcal par jour")
+    let besoinObjectif = null
+    const nbSemaines = parseFloat(d) * 4.345
+    if (!isNaN(obj) && !isNaN(nbSemaines) && nbSemaines > 0 && poids > obj) {
+      const perte = poids - obj
+      const deficitQuotidien = (perte * 7700) / (nbSemaines * 7)
+      besoinObjectif = Math.round(besoinCalorique - deficitQuotidien)
+    }
 
     let errorProfil = null
 
@@ -144,8 +153,9 @@ export default function ProfilPage() {
           age: a,
           objectif: obj,
           besoin_calorique: besoinCalorique,
+          besoin_objectif: besoinObjectif, // <-- AJOUT ICI !
           pourquoi,
-          delai
+          delai: d
         })
         .eq('id', dernierProfil.id)
       errorProfil = error
@@ -157,8 +167,9 @@ export default function ProfilPage() {
         age: a,
         objectif: obj,
         besoin_calorique: besoinCalorique,
+        besoin_objectif: besoinObjectif, // <-- AJOUT ICI !
         pourquoi,
-        delai
+        delai: d
       })
       errorProfil = error
 
@@ -180,7 +191,7 @@ export default function ProfilPage() {
     }
   }
 
-  // Styles personnalisés
+  // Styles personnalisés (inchangés)
   const styles = {
     container: {
       padding: '2rem',
@@ -346,6 +357,9 @@ export default function ProfilPage() {
             <li><span style={styles.recapLabel}>Délai :</span> {dernierProfil.delai} mois</li>
             <li><span style={styles.recapLabel}>Pourquoi :</span> {dernierProfil.pourquoi}</li>
             <li><span style={styles.recapLabel}>Besoin calorique :</span> {dernierProfil.besoin_calorique} kcal</li>
+            {typeof dernierProfil.besoin_objectif === "number" && dernierProfil.besoin_objectif > 0 && (
+              <li><span style={styles.recapLabel}>Objectif calorique (perte de poids) :</span> {dernierProfil.besoin_objectif} kcal</li>
+            )}
           </ul>
           <div style={styles.recapDate}>
             Profil créé le {formatDateTime(dernierProfil.created_at)}
