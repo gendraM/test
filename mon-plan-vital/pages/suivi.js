@@ -500,17 +500,50 @@ export default function Suivi() {
     setScoreHebdomadaire(Math.round((repasAlignesHebdo / 28) * 100));
   };
 
-  const handleSaveRepas = async (data) => {
-    const { error } = await supabase.from('repas_reels').insert([{ ...data, date: selectedDate }]);
-    if (error) {
-      setSnackbar({ open: true, message: "Erreur lors de l'enregistrement du repas.", type: "error" });
+ const handleSaveRepas = async (data) => {
+  // Nettoyage des champs attendus
+  const repas = { ...data };
+
+  // Champs booléens à nettoyer
+  const boolFields = ["est_extra", "regle_respectee"];
+  boolFields.forEach(field => {
+    // Si la valeur est true ou "true" => true, sinon => false
+    repas[field] = repas[field] === true || repas[field] === "true";
+  });
+
+  // Champs numériques à nettoyer
+  const numFields = ["kcal", "quantite"];
+  numFields.forEach(field => {
+    if (repas[field] === "" || repas[field] === undefined || repas[field] === null) {
+      repas[field] = field === "kcal" ? 0 : null;
     } else {
-      setSnackbar({ open: true, message: "Repas enregistré avec succès !", type: "success" });
-      // La liste locale est rafraîchie dans RepasBloc, ici on rafraîchit la semaine pour scores
-      const updatedRepasSemaine = await fetchRepasSemaine();
-      setRepasSemaine(updatedRepasSemaine);
+      repas[field] = Number(repas[field]);
+      if (isNaN(repas[field])) repas[field] = field === "kcal" ? 0 : null;
     }
-  };
+  });
+
+  // Supprimer le champ parasite "calories"
+  if ("calories" in repas) {
+    delete repas.calories;
+  }
+
+  // Supprimer toute string vide restante sur un champ boolean
+  boolFields.forEach(field => {
+    if (typeof repas[field] === "string" && repas[field].trim() === "") {
+      repas[field] = false;
+    }
+  });
+
+  // Insertion dans la base
+  const { error } = await supabase.from('repas_reels').insert([{ ...repas, date: selectedDate }]);
+  if (error) {
+    setSnackbar({ open: true, message: "Erreur lors de l'enregistrement du repas.", type: "error" });
+  } else {
+    setSnackbar({ open: true, message: "Repas enregistré avec succès !", type: "success" });
+    const updatedRepasSemaine = await fetchRepasSemaine();
+    setRepasSemaine(updatedRepasSemaine);
+  }
+};
 
   // ----------- AFFICHAGE -----------
   return (

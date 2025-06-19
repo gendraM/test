@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import FormulaireProfil from '../components/FormulaireProfil'
+import Link from "next/link";
 
 function formatDateTime(dateString) {
   if (!dateString) return ''
@@ -375,6 +376,15 @@ export default function ProfilPage() {
           </button>
         </div>
       )}
+
+      <Link href="/jeune">
+        <button style={{
+          background: "#1976d2", color: "#fff", border: "none", borderRadius: 8,
+          padding: "10px 24px", fontWeight: 700, fontSize: 16, cursor: "pointer"
+        }}>
+          Commencer un jeune
+        </button>
+      </Link>
     </div>
   )
 }
