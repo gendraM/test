@@ -507,7 +507,6 @@ export default function Suivi() {
   // Champs booléens à nettoyer
   const boolFields = ["est_extra", "regle_respectee"];
   boolFields.forEach(field => {
-    // Si la valeur est true ou "true" => true, sinon => false
     repas[field] = repas[field] === true || repas[field] === "true";
   });
 
@@ -534,8 +533,17 @@ export default function Suivi() {
     }
   });
 
-  // Insertion dans la base
-  const { error } = await supabase.from('repas_reels').insert([{ ...repas, date: selectedDate }]);
+  // Récupérer l'user_id connecté
+  let userId = null;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data?.user?.id) {
+      userId = data.user.id;
+    }
+  } catch {}
+
+  // Insertion dans la base avec user_id
+  const { error } = await supabase.from('repas_reels').insert([{ ...repas, date: selectedDate, user_id: userId }]);
   if (error) {
     setSnackbar({ open: true, message: "Erreur lors de l'enregistrement du repas.", type: "error" });
   } else {
@@ -544,6 +552,43 @@ export default function Suivi() {
     setRepasSemaine(updatedRepasSemaine);
   }
 };
+
+  // Fonction de refresh manuel
+  const handleRefresh = async () => {
+    setLoading(true);
+    const plan = await fetchRepasPlan();
+    const semaine = await fetchRepasSemaine();
+    setRepasPlan(plan);
+    setRepasSemaine(semaine);
+    repasReady.current = true;
+    const weekly = getWeeklyExtrasHistory(semaine, selectedDate, 16);
+    setWeeklyHistory(weekly);
+    const palier = getWeeklyPalier(weekly);
+    setCurrentPalier(palier);
+    setExtrasThisWeek(weekly[0]?.count ?? 0);
+    setExtrasLastWeek(weekly[1]?.count ?? 0);
+    setVariation(
+      typeof weekly[0]?.count === "number" && typeof weekly[1]?.count === "number"
+        ? weekly[0].count - weekly[1].count
+        : null
+    );
+    setProgression(getProgressionMessage(weekly, palier));
+    const extrasTotal = semaine.filter((repas) => repas.est_extra);
+    setExtrasTotalSemaine(extrasTotal);
+    const extrasAujourdHui = semaine.filter(
+      (repas) => repas.date === selectedDate && repas.est_extra
+    );
+    setExtrasDuJour(extrasAujourdHui);
+    const extrasHorsQuotaAll = extrasTotal.slice(palier);
+    const extrasHorsQuota7j = extrasHorsQuotaAll.filter(extra =>
+      isInLast7Days(extra.date, selectedDate)
+    );
+    setExtrasHorsQuota(extrasHorsQuota7j);
+    setExtrasRestants(Math.max(0, palier - extrasTotal.length));
+    calculerScores(semaine);
+    setLoading(false);
+    setSnackbar({ open: true, message: "Statistiques rafraîchies !", type: "success" });
+  };
 
   // ----------- AFFICHAGE -----------
   return (
@@ -569,6 +614,11 @@ export default function Suivi() {
       }}>
         🥗 Suivi alimentaire du jour
       </h1>
+      <div style={{textAlign:'center', marginBottom:'1.5rem'}}>
+        <button onClick={handleRefresh} style={{
+          background:'#1976d2', color:'#fff', border:'none', borderRadius:8, padding:'8px 22px', fontWeight:600, fontSize:16, cursor:'pointer'
+        }}>🔄 Rafraîchir les statistiques</button>
+      </div>
 
       {/* ----------- INFOS CALORIQUES JOURNALIÈRES ----------- */}
       <div style={{

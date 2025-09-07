@@ -448,8 +448,8 @@ export default function SuiviPoids() {
         <button style={styles.navButton} onClick={() => window.location.href = '/profil'}>
           Retour à mon profil
         </button>
-        <button style={styles.navButton} onClick={() => window.location.href = '/dashboard'}>
-          Voir mon tableau-de-bord
+        <button style={styles.navButton} onClick={() => window.location.href = '/tableau-de-bord'}>
+          Voir mon tableau de bord
         </button>
       </div>
 
