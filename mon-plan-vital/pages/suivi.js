@@ -888,6 +888,21 @@ export default function Suivi() {
             📅 Planifier mes repas
           </button>
         </Link>
+          <Link href="/tableau-de-bord">
+            <button style={{
+              background: "#43a047",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "10px 24px",
+              fontWeight: 600,
+              fontSize: 16,
+              cursor: "pointer",
+              marginTop: 16
+            }}>
+              🏠 Retour au tableau de bord
+            </button>
+          </Link>
       </div>
     </div>
   );
