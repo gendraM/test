@@ -93,6 +93,8 @@ export default function TableauDeBord() {
   }, [periode]);
   // Fonction de refresh manuel
   const handleRefresh = async () => {
+  const { debut, fin } = getPeriodeDates();
+    // Récupération locale des bornes de période
     // --- Calcul évolution extras ---
     let evoExtras = [];
     if (periode === 'semaine') {
@@ -111,13 +113,11 @@ export default function TableauDeBord() {
       while (current <= fin) {
         const weekStart = new Date(current);
         const weekEnd = new Date(weekStart);
-  weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
+        weekEnd.setDate(weekStart.getDate() + 6);
         const label = `Sem. ${week}`;
         const count = repasReels?.filter(r => r.est_extra && r.date >= weekStart.toISOString().slice(0,10) && r.date <= weekEnd.toISOString().slice(0,10)).length || 0;
         evoExtras.push({ label, count });
-  current = new Date(current);
-  current.setDate(current.getDate() + 7);
+        current.setDate(current.getDate() + 7);
         week++;
       }
     } else if (periode === 'annee') {
@@ -139,7 +139,7 @@ export default function TableauDeBord() {
         const d = new Date(debut);
         d.setDate(d.getDate() + i);
         const label = d.toLocaleDateString('fr-FR', { weekday: 'short' });
-        const poids = poidsHistory?.find(p => p.date === d.toISOString().slice(0,10))?.poids || null;
+        const poids = poidsData?.find(p => p.date === d.toISOString().slice(0,10))?.poids || null;
         evoPoids.push({ label, poids });
       }
     } else if (periode === 'mois') {
@@ -148,15 +148,13 @@ export default function TableauDeBord() {
       while (current <= fin) {
         const weekStart = new Date(current);
         const weekEnd = new Date(weekStart);
-  weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
+        weekEnd.setDate(weekStart.getDate() + 6);
         const label = `Sem. ${week}`;
         // Moyenne du poids sur la semaine
-        const poidsValues = poidsHistory?.filter(p => p.date >= weekStart.toISOString().slice(0,10) && p.date <= weekEnd.toISOString().slice(0,10)).map(p => p.poids) || [];
+        const poidsValues = poidsData?.filter(p => p.date >= weekStart.toISOString().slice(0,10) && p.date <= weekEnd.toISOString().slice(0,10)).map(p => p.poids) || [];
         const poids = poidsValues.length ? (poidsValues.reduce((a,b)=>a+b,0)/poidsValues.length).toFixed(1) : null;
         evoPoids.push({ label, poids });
-  current = new Date(current);
-  current.setDate(current.getDate() + 7);
+        current.setDate(current.getDate() + 7);
         week++;
       }
     } else if (periode === 'annee') {
@@ -164,14 +162,13 @@ export default function TableauDeBord() {
         const monthStart = new Date(debut.getFullYear(), m, 1);
         const monthEnd = new Date(debut.getFullYear(), m + 1, 0);
         const label = monthStart.toLocaleDateString('fr-FR', { month: 'short' });
-        const poidsValues = poidsHistory?.filter(p => p.date >= monthStart.toISOString().slice(0,10) && p.date <= monthEnd.toISOString().slice(0,10)).map(p => p.poids) || [];
+        const poidsValues = poidsData?.filter(p => p.date >= monthStart.toISOString().slice(0,10) && p.date <= monthEnd.toISOString().slice(0,10)).map(p => p.poids) || [];
         const poids = poidsValues.length ? (poidsValues.reduce((a,b)=>a+b,0)/poidsValues.length).toFixed(1) : null;
         evoPoids.push({ label, poids });
       }
     }
     setEvolutionPoids(evoPoids);
     setLoading(true);
-    const { debut, fin } = getPeriodeDates();
     // 1. Historique poids
     const { data: poidsHistory } = await supabase
       .from("historique_poids")
@@ -188,13 +185,14 @@ export default function TableauDeBord() {
       .lte("date", fin.toISOString().slice(0,10));
     setHumeurData(humeurs || []);
     // 3. Satiété (repas pris par faim)
-    const { data: repasReels, count: totalRepas } = await supabase
+    const { data: repasReelsData, count: totalRepas } = await supabase
       .from("repas_reels")
       .select("*", { count: "exact" })
       .gte("date", debut.toISOString().slice(0,10))
       .lte("date", fin.toISOString().slice(0,10));
+    setRepasReels(repasReelsData || []);
     const repasParFaim =
-      repasReels?.filter((r) => r.raison_manger === "J'avais faim").length || 0;
+      repasReelsData?.filter((r) => r.raison_manger === "J'avais faim").length || 0;
     setSatieteData({ faim: repasParFaim, total: totalRepas || 0 });
     // 4. Extras sur la période
     const { data: extrasPeriod } = await supabase
@@ -249,6 +247,7 @@ export default function TableauDeBord() {
   const [satieteData, setSatieteData] = useState({ faim: 0, total: 0 });
   const [extrasData, setExtrasData] = useState({ current: 0, quota: 3 });
   const [badges, setBadges] = useState([]);
+  const [repasReels, setRepasReels] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Progression badge/message
@@ -378,60 +377,42 @@ export default function TableauDeBord() {
         }}>🔄 Rafraîchir les statistiques</button>
       </div>
 
-      {/* --- Récapitulatif synthétique --- */}
-      <div style={{display:'flex', gap:'2rem', justifyContent:'center', margin:'2rem 0'}}>
-        {/* Carte repas */}
-        <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#1976d2'}}>🍽️ {repasReels?.length || 0}</div>
-          <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Repas sur la période</div>
-        </div>
-        {/* Carte extras */}
-        <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:extrasData.current <= extrasData.quota ? '#43a047' : '#e53935'}}>✨ {extrasData.current || 0}</div>
-          <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Extras</div>
-        </div>
-        {/* Carte satiété */}
-        <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#2980b9'}}>{tauxSatiete}%</div>
-          <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Taux de satiété</div>
-        </div>
-        {/* Carte humeur dominante */}
-        <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#9c27b0'}}>{humeurCounts ? Object.entries(humeurCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—' : '—'}</div>
-          <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Humeur dominante</div>
-        </div>
-        {/* Carte poids moyen */}
-        <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#ffa726'}}>{poidsHistory && poidsHistory.length > 0 ? (poidsHistory.reduce((acc,p)=>acc+p.poids,0)/poidsHistory.length).toFixed(1) : '—'}</div>
-          <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Poids moyen</div>
-        </div>
-      </div>
 
       {/* --- Récapitulatif synthétique --- */}
       <div style={{display:'flex', gap:'2rem', justifyContent:'center', margin:'2rem 0'}}>
         {/* Carte repas */}
         <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#1976d2'}}>🍽️ {repasReels?.length || 0}</div>
+          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#1976d2'}}>
+            🍽️ {Array.isArray(repasReels) ? repasReels.length : 0}
+          </div>
           <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Repas sur la période</div>
         </div>
         {/* Carte extras */}
         <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:extrasData.current <= extrasData.quota ? '#43a047' : '#e53935'}}>✨ {extrasData.current || 0}</div>
+          <div style={{fontSize:'2.1rem', fontWeight:700, color:(extrasData && typeof extrasData.current === 'number' && typeof extrasData.quota === 'number' && extrasData.current <= extrasData.quota) ? '#43a047' : '#e53935'}}>
+            ✨ {extrasData && typeof extrasData.current === 'number' ? extrasData.current : 0}
+          </div>
           <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Extras</div>
         </div>
         {/* Carte satiété */}
         <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#2980b9'}}>{tauxSatiete}%</div>
+          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#2980b9'}}>
+            {typeof tauxSatiete === 'string' || typeof tauxSatiete === 'number' ? tauxSatiete : 0}%
+          </div>
           <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Taux de satiété</div>
         </div>
         {/* Carte humeur dominante */}
         <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#9c27b0'}}>{humeurCounts ? Object.entries(humeurCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—' : '—'}</div>
+          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#9c27b0'}}>
+            {humeurCounts && Object.keys(humeurCounts).length > 0 ? Object.entries(humeurCounts).sort((a,b)=>b[1]-a[1])[0][0] : '—'}
+          </div>
           <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Humeur dominante</div>
         </div>
         {/* Carte poids moyen */}
         <div style={{background:'#fff', borderRadius:14, boxShadow:'0 2px 8px #e0e0e0', padding:'1.2rem 2rem', minWidth:170, textAlign:'center'}}>
-          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#ffa726'}}>{poidsHistory && poidsHistory.length > 0 ? (poidsHistory.reduce((acc,p)=>acc+p.poids,0)/poidsHistory.length).toFixed(1) : '—'}</div>
+          <div style={{fontSize:'2.1rem', fontWeight:700, color:'#ffa726'}}>
+            {Array.isArray(poidsData) && poidsData.length > 0 ? (poidsData.reduce((acc,p)=>acc+p.poids,0)/poidsData.length).toFixed(1) : '—'}
+          </div>
           <div style={{color:'#888', fontWeight:600, fontSize:'1.08rem'}}>Poids moyen</div>
         </div>
       </div>
