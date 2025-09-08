@@ -61,14 +61,24 @@ export default function Plan() {
   const [comparaison, setComparaison] = useState({ semaineActuelle: 0, semainePrecedente: 0 });
 
   // Etat motivation/mois
-  const [mantra, setMantra] = useState(() => localStorage.getItem("mantra") || "");
-  const [objectif, setObjectif] = useState(() => localStorage.getItem("objectif") || "");
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "");
-  const [valideInfos, setValideInfos] = useState({
-    mantra: localStorage.getItem("mantra") || "",
-    objectif: localStorage.getItem("objectif") || "",
-    theme: localStorage.getItem("theme") || ""
-  });
+  const [mantra, setMantra] = useState("");
+  const [objectif, setObjectif] = useState("");
+  const [theme, setTheme] = useState("");
+  const [valideInfos, setValideInfos] = useState({ mantra: "", objectif: "", theme: "" });
+
+  // Récupère les valeurs de localStorage côté client
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setMantra(localStorage.getItem("mantra") || "");
+      setObjectif(localStorage.getItem("objectif") || "");
+      setTheme(localStorage.getItem("theme") || "");
+      setValideInfos({
+        mantra: localStorage.getItem("mantra") || "",
+        objectif: localStorage.getItem("objectif") || "",
+        theme: localStorage.getItem("theme") || ""
+      });
+    }
+  }, []);
 
   const days = getDaysInMonth(year, month);
 
@@ -151,9 +161,11 @@ export default function Plan() {
 
   // Validation et sauvegarde des infos du mois
   const handleValideInfos = () => {
-    localStorage.setItem("mantra", mantra);
-    localStorage.setItem("objectif", objectif);
-    localStorage.setItem("theme", theme);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("mantra", mantra);
+      localStorage.setItem("objectif", objectif);
+      localStorage.setItem("theme", theme);
+    }
     setValideInfos({ mantra, objectif, theme });
   };
 
