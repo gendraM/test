@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-
 export default function Home() {
   return (
     <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
@@ -17,8 +16,8 @@ export default function Home() {
         </ul>
       </div>
       <p style={{ marginTop: '2rem' }}>
-        <Link href="/profil">
-          <a style={{ 
+        <Link href="/profil"
+          style={{ 
             display: 'inline-block',
             padding: '0.75rem 1.5rem',
             backgroundColor: '#3498db',
@@ -27,8 +26,7 @@ export default function Home() {
             textDecoration: 'none',
             fontWeight: 'bold'
           }}>
-            → Accéder à mon profil
-          </a>
+          → Accéder à mon profil
         </Link>
       </p>
     </div>

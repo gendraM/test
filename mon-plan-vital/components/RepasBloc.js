@@ -86,6 +86,9 @@ export default function RepasBloc({
   const [quantite, setQuantite] = useState('')
   const [kcal, setKcal] = useState('')
   const [estExtra, setEstExtra] = useState(false)
+  // AJOUTE ICI :
+const [detailFastFood, setDetailFastFood] = useState('');
+const [kcalFastFood, setKcalFastFood] = useState('');
   const [satiete, setSatiete] = useState('')
   const [pourquoi, setPourquoi] = useState('')
   const [ressenti, setRessenti] = useState('')
@@ -200,13 +203,20 @@ export default function RepasBloc({
       return;
     }
     // Repas classique
-    await onSave && onSave({
-      type, date, aliment, categorie, quantite, kcal,
-      est_extra: estExtra,
-      satiete, pourquoi, ressenti,
-      details_signaux: detailsSignaux,
-      regle_respectee: planCategorie && categorie && planCategorie === categorie
-    })
+  await onSave && onSave({
+    type,
+    date,
+    aliment: categorie === "fast food" ? detailFastFood : aliment,
+    categorie,
+    quantite,
+    kcal: categorie === "fast food" && kcalFastFood ? kcalFastFood : kcal,
+    est_extra: estExtra,
+    satiete,
+    pourquoi,
+    ressenti,
+    details_signaux: detailsSignaux,
+    regle_respectee: planCategorie && categorie && planCategorie === categorie
+  })
     setAliment('')
     setCategorie('')
     setQuantite('')
@@ -451,12 +461,37 @@ export default function RepasBloc({
           />
           <datalist id="categories">
             <option value="féculent" />
-            <option value="protéine" />
-            <option value="légume" />
+            <option value="laitage" />
+            <option value="légumes" />
             <option value="fruit" />
             <option value="extra" />
             <option value="poisson" />
             <option value="volaille" />
+            <option value="boisson" />
+            // ...existing code...
+{categorie === "fast food" && (
+  <div style={{ margin: "12px 0", padding: "10px", background: "#fffbe6", borderRadius: "8px" }}>
+    <label>Détail du fast food (optionnel) :</label>
+    <input
+      type="text"
+      value={detailFastFood}
+      onChange={e => setDetailFastFood(e.target.value)}
+      placeholder="Ex : burger, frites, soda"
+      style={{ marginBottom: 8 }}
+    />
+    <label>Kcal total :</label>
+    <input
+      type="number"
+      value={kcalFastFood}
+      onChange={e => setKcalFastFood(e.target.value)}
+      placeholder="Ex : 1200"
+    />
+    <div style={{ color: "#b71c1c", marginTop: 8 }}>
+      Règle : 8 fast-foods / an MAX (≈ 1 tous les 45 jours)
+    </div>
+  </div>
+)}
+// ...existing code...
           </datalist>
           <label>Quantité</label>
           <input value={quantite} onChange={e => setQuantite(e.target.value)} required />
